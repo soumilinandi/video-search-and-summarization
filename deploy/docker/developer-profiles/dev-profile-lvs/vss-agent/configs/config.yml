@@ -278,6 +278,24 @@ functions:
     # No Video Analytics MCP tools configured = Video(uploaded) Report mode
     video_report_tool: video_report_gen
 
+  # >>> caption retrieval: read LVS captions from Elasticsearch (no VLM call)
+  lvs_caption_retrieval:
+    _type: knowledge_retrieval
+    backend: es_caption
+    collection_name: ""                                          # agent passes per-query stream_id
+    top_k: 5
+    backend_config:
+      elasticsearch_url: ${ELASTIC_SEARCH_ENDPOINT:-http://elasticsearch:9200}
+      index: default_*                                           # per-stream `default_<stream_id>` indices
+      # NOTE: aggregated_summary is unreliable while vss_ctx_rag<3.0.0rc5 drops
+      # zero-duration events from the merger. Default to raw_events for now;
+      # revert once the merger fix lands in the LVS container.
+      default_doc_type: raw_events
+      api_key: ""
+      verify_ssl: false
+      timeout: 30
+  # <<< caption retrieval
+
 llms:
   # --- LLM profiles (selected by LLM_MODEL_TYPE) ---
   nim_llm:
@@ -347,6 +365,7 @@ workflow:
   - lvs_video_understanding
   - lvs_config_media
   - lvs_stream_understanding
+  - lvs_caption_retrieval
   - vst_video_clip
   - vst_snapshot
   - vst_video_list
@@ -369,12 +388,19 @@ workflow:
       - For uploaded videos: pass sensor_id (str or list[str]) and user_query.
       - For live streams: pass media_type='stream', a single sensor_id (the stream name), start_time and end_time as floats in seconds (use end_time=0 for "until now"), and user_query.
       - Examples: "Generate a report for video1" → ONE call report_agent(sensor_id='video1', user_query=...). "Generate a report for stream CAM_1 from 0 to 60 seconds" → ONE call report_agent(media_type='stream', sensor_id='CAM_1', start_time=0, end_time=60, user_query=...).
+      **lvs_caption_retrieval** - DEFAULT path for any content question about a previously-summarized RTSP live stream.
+      - ALWAYS call this FIRST for stream content questions — it reads stored captions and is much cheaper than re-running the VLM.
+      - Pass `collection` = the stream's `stream_id` (= VST sensor_id = ES uuid). Get it from the most recent `lvs_stream_understanding` / `lvs_config_media` response, or from `vst_video_list`.
+      - Pass `filters` only when the user explicitly asks for something specific (a time window, a particular doc_type); otherwise omit and let the deployment defaults run. The tool description has the exact filter shape.
+      - If the response returns `chunks=[]`, fall back to `lvs_stream_understanding` to query the VLM directly.
+      - Skip for operational queries (show videos, snapshots, reports).
+      - Examples: "Did anyone violate PPE in stream CAM_1?", "What happened in CAM_1 around 22:00 UTC?"
       **lvs_video_understanding** - For SUMMARIZING uploaded videos (not streams, not reports).
       - Use when user asks to "summarize" or "give a summary of" a video, optionally over a time range.
       - Pass sensor_id (the video name from vst_video_list); start_time/end_time are floats in seconds (omit both for the whole video).
       - Examples: "Summarize video warehouse_sample" (no times), "Summarize video warehouse_sample from start to second 45" (start_time=0, end_time=45)
-      **lvs_stream_understanding** - For SUMMARIZING live streams (not videos, not reports).
-      - Use when user asks to "summarize" or "describe" a stream over a time range.
+      **lvs_stream_understanding** - For SUMMARIZING live streams (not videos, not reports), AND as the VLM fallback when `lvs_caption_retrieval` returns `chunks=[]`.
+      - Use when user asks to "summarize" or "describe" a stream over a time range, OR when a prior `lvs_caption_retrieval` call returned no chunks.
       - Do NOT use this tool to "check" whether a stream is configured before calling another tool — it is for showing summaries to the user.
       - Pass stream_name, numeric start_time, numeric end_time, response_type='summary'.
       - If the response status is "not_configured", surface the response message VERBATIM to the user and STOP. Do NOT auto-call lvs_config_media — caption generation must be confirmed by the user first.
