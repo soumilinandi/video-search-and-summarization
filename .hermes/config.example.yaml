@@ -1,0 +1,5 @@
+# Merge this block into ~/.hermes/config.yaml with `hermes config edit`.
+# Replace the path below with the absolute path to this VSS checkout.
+skills:
+  external_dirs:
+    - /path/to/video-search-and-summarization/skills
