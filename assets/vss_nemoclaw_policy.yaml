@@ -123,6 +123,7 @@ network_policies:
     binaries:
       - { path: /usr/local/bin/openclaw }
       - { path: /usr/local/bin/node }
+      - { path: /usr/bin/node }
 
   openclaw_api:
     name: openclaw_api
@@ -162,6 +163,24 @@ network_policies:
       - { path: /usr/local/bin/openclaw }
       - { path: /usr/local/bin/npm }
       - { path: /usr/local/bin/node }
+      - { path: /usr/bin/npm }
+      - { path: /usr/bin/node }
+
+  openclaw-otel:
+    name: openclaw-otel
+    endpoints:
+      - host: host.openshell.internal
+        port: 4318
+        access: full
+        allowed_ips:
+          - 172.17.0.0/16
+          - 172.18.0.0/16
+          - 172.20.0.0/16
+    binaries:
+      - { path: /usr/local/bin/openclaw }
+      - { path: /usr/local/bin/node }
+      - { path: /usr/bin/node }
+      - { path: /usr/bin/curl }
 
   telegram:
     name: telegram

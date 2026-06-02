@@ -27,6 +27,8 @@ NEMOCLAW_SHIM_DIR="${HOME}/.local/bin"
 OPENCLAW_CONFIG_UPDATE_SCRIPT="${OPENCLAW_CONFIG_UPDATE_SCRIPT:-${SCRIPT_DIR}/update_openclaw_config.py}"
 NEMOCLAW_POLICY_FILE="${NEMOCLAW_POLICY_FILE:-${VSS_REPO_DIR}/assets/vss_nemoclaw_policy.yaml}"
 OPENCLAW_PLUGIN_DIR="${OPENCLAW_PLUGIN_DIR:-${VSS_REPO_DIR}/.openclaw}"
+OPENCLAW_OTEL_ENABLED="${OPENCLAW_OTEL_ENABLED:-0}"
+OPENCLAW_OTEL_ENDPOINT="${OPENCLAW_OTEL_ENDPOINT:-http://host.openshell.internal:4318}"
 VSS_NAMESPACE="${VSS_NAMESPACE:-openshell}"
 VSS_REMOTE_CONFIG_PATH="/sandbox/.openclaw/openclaw.json"
 
@@ -36,6 +38,13 @@ log() {
 
 have() {
   command -v "$1" >/dev/null 2>&1
+}
+
+is_truthy() {
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 node_major_version() {
@@ -74,6 +83,9 @@ Environment (non-interactive Nemoclaw / OpenShell):
   OPENSHELL_PROVIDER_NAME     Name for openshell OpenAI-compatible provider (default: nvidia)
   OPENCLAW_PLUGIN_DIR              Path to the OpenClaw plugin source to pack and install
                               (default: <VSS_REPO_DIR>/.openclaw)
+  OPENCLAW_OTEL_ENABLED       Set to 1/true to enable OpenClaw diagnostics OTEL export
+  OPENCLAW_OTEL_ENDPOINT      OTLP/HTTP collector base endpoint
+                              (default: http://host.openshell.internal:4318)
 EOF
 }
 
@@ -463,7 +475,7 @@ restart_vss_openclaw_gateway() {
 
   log "Restarting OpenClaw gateway in sandbox ${NEMOCLAW_SANDBOX_NAME}"
   openshell sandbox exec -n "${NEMOCLAW_SANDBOX_NAME}" -- sh -lc \
-    "pkill -TERM -f '[o]penclaw-gateway' || true" </dev/null || true
+    "pkill -TERM -f '[o]penclaw-gateway|[o]penclaw' || true" </dev/null || true
 
   for attempt in $(seq 1 30); do
     if openshell sandbox exec -n "${NEMOCLAW_SANDBOX_NAME}" -- sh -lc \
@@ -476,6 +488,61 @@ restart_vss_openclaw_gateway() {
 
   log "WARN: OpenClaw gateway did not become healthy within 30 seconds after restart"
   return 1
+}
+
+enable_openclaw_otel_plugin() {
+  if ! is_truthy "${OPENCLAW_OTEL_ENABLED}"; then
+    return
+  fi
+
+  if ! have openshell; then
+    log "OpenShell is not available; cannot enable OpenClaw OTEL plugin"
+    return 1
+  fi
+
+  log "Installing/enabling OpenClaw diagnostics OTEL plugin"
+  if ! openshell sandbox exec -n "${NEMOCLAW_SANDBOX_NAME}" -- sh -lc '
+set -e
+version="$(openclaw --version | awk "/OpenClaw/{print \$2; exit}")"
+if [ -z "$version" ]; then
+  echo "could not determine OpenClaw version" >&2
+  exit 1
+fi
+plugin_spec="@openclaw/diagnostics-otel@${version}"
+openclaw plugins install "$plugin_spec" --force --pin || openclaw plugins enable diagnostics-otel
+' </dev/null; then
+    log "ERROR: failed to install or enable OpenClaw diagnostics OTEL plugin"
+    return 1
+  fi
+}
+
+patch_openclaw_otel_exporter() {
+  if ! is_truthy "${OPENCLAW_OTEL_ENABLED}"; then
+    return
+  fi
+
+  if ! have openshell; then
+    log "OpenShell is not available; cannot patch OpenClaw OTEL exporter"
+    return 1
+  fi
+
+  log "Applying OpenTelemetry HTTP agent compatibility patch for NemoClaw proxy"
+  openshell sandbox exec -n "${NEMOCLAW_SANDBOX_NAME}" -- sh -lc '
+set -e
+p="/sandbox/.openclaw/npm/node_modules/@openclaw/diagnostics-otel/node_modules/@opentelemetry/otlp-exporter-base/build/src/transport/http-transport-utils.js"
+if [ ! -f "$p" ]; then
+  echo "OTEL transport file not found, skipping patch: $p"
+  exit 0
+fi
+if grep -q "agent," "$p"; then
+  cp -n "$p" "$p.bak-no-agent" 2>/dev/null || true
+  perl -0pi -e "s/\n([[:space:]]*)agent,\n/\n/" "$p"
+fi
+if grep -q "agent," "$p"; then
+  echo "failed to remove OTEL HTTP agent from $p" >&2
+  exit 1
+fi
+' </dev/null
 }
 
 install_vss_openclaw_plugin() {
@@ -684,11 +751,20 @@ main() {
   ensure_dashboard_forward
   configure_ngc_credential_provider
   apply_vss_policy
+  enable_openclaw_otel_plugin
+  patch_openclaw_otel_exporter
   update_openclaw_allowed_origin
   # Policy/config updates can briefly flap gateway readiness before plugin install.
   wait_for_sandbox_ready "${NEMOCLAW_POST_CONFIG_READY_TIMEOUT:-60}"
   configure_ngc_cli_in_sandbox
   install_vss_openclaw_plugin
+  # Plugin installs can rewrite openclaw.json, so make the VSS/OTEL config the
+  # final writer. The gateway restart makes the OTEL transport patch effective.
+  update_openclaw_allowed_origin
+  if is_truthy "${OPENCLAW_OTEL_ENABLED}"; then
+    restart_vss_openclaw_gateway || return 1
+    ensure_dashboard_forward || return 1
+  fi
 
   log "To use nemoclaw in your current shell, run:"
   printf '\n  . "%s/nvm.sh"\n\n' "${NVM_DIR:-$HOME/.nvm}"
@@ -699,5 +775,6 @@ validate_custom_provider
 export NEMOCLAW_SANDBOX_NAME NEMOCLAW_PROVIDER OPENSHELL_PROVIDER_NAME NEMOCLAW_MODEL NEMOCLAW_NON_INTERACTIVE NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE
 export NEMOCLAW_ENDPOINT_URL COMPATIBLE_API_KEY
 export NEMOCLAW_REPO_DIR OPENCLAW_CONFIG_UPDATE_SCRIPT NEMOCLAW_POLICY_FILE
+export OPENCLAW_OTEL_ENABLED OPENCLAW_OTEL_ENDPOINT
 
 main

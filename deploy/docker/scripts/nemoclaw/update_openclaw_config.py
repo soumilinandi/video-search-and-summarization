@@ -17,6 +17,10 @@ RED_BOLD = "\033[1;31m"
 RESET = "\033[0m"
 
 
+def is_truthy(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def sandbox_exec(
     sandbox_name: str,
     remote_args: list[str],
@@ -227,6 +231,60 @@ def update_mcp_server(data: dict, *, name: str, url: str) -> bool:
     return True
 
 
+def update_otel_config(
+    data: dict,
+    *,
+    enabled: bool,
+    endpoint: str,
+) -> bool:
+    if not enabled:
+        return False
+
+    if not endpoint:
+        raise ValueError("OPENCLAW_OTEL_ENDPOINT is required when OTEL is enabled")
+
+    before = json.dumps(
+        {
+            "plugins": data.get("plugins"),
+            "diagnostics": data.get("diagnostics"),
+        },
+        sort_keys=True,
+    )
+
+    plugins = data.setdefault("plugins", {})
+    allow = plugins.setdefault("allow", [])
+    if "diagnostics-otel" not in allow:
+        allow.append("diagnostics-otel")
+    entries = plugins.setdefault("entries", {})
+    entries["diagnostics-otel"] = {"enabled": True}
+
+    diagnostics = data.setdefault("diagnostics", {})
+    diagnostics["enabled"] = True
+    otel = diagnostics.setdefault("otel", {})
+    otel.update(
+        {
+            "enabled": True,
+            "endpoint": endpoint,
+            "protocol": "http/protobuf",
+            "serviceName": "openclaw-gateway",
+            "traces": True,
+            "metrics": False,
+            "logs": False,
+            "sampleRate": 1.0,
+            "flushIntervalMs": 1000,
+        }
+    )
+
+    after = json.dumps(
+        {
+            "plugins": data.get("plugins"),
+            "diagnostics": data.get("diagnostics"),
+        },
+        sort_keys=True,
+    )
+    return after != before
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Safely update openclaw.json inside an OpenShell sandbox."
@@ -283,6 +341,17 @@ def main() -> int:
             "(default: http://host.openshell.internal:9988/mcp)"
         ),
     )
+    parser.add_argument(
+        "--otel-enabled",
+        action="store_true",
+        default=is_truthy(os.environ.get("OPENCLAW_OTEL_ENABLED")),
+        help="Enable OpenClaw diagnostics OTEL export in openclaw.json",
+    )
+    parser.add_argument(
+        "--otel-endpoint",
+        default=os.environ.get("OPENCLAW_OTEL_ENDPOINT", "http://host.openshell.internal:4318").strip(),
+        help="OTLP/HTTP collector base endpoint (default: http://host.openshell.internal:4318)",
+    )
     args = parser.parse_args()
 
     env_id = get_brev_env_id()
@@ -321,6 +390,13 @@ def main() -> int:
     if update_mcp_server(data, name=args.mcp_name, url=args.mcp_url):
         changed = True
 
+    if update_otel_config(
+        data,
+        enabled=args.otel_enabled,
+        endpoint=args.otel_endpoint,
+    ):
+        changed = True
+
     updated_json = json.dumps(data, indent=2) + "\n"
 
     if args.dry_run:
@@ -330,6 +406,8 @@ def main() -> int:
         print(f"Origin enabled: {origin}")
         if args.enable_hooks:
             print(f"OpenClaw hooks enabled at: {args.hooks_path}")
+        if args.otel_enabled:
+            print(f"OpenClaw OTEL endpoint: {args.otel_endpoint}")
         print(f"Would change file: {'yes' if changed else 'no'}")
         print()
         print(json.dumps(updated_json, indent=2) + "\n")
@@ -355,6 +433,8 @@ def main() -> int:
         print(f"OpenClaw hooks enabled at: {args.hooks_path}")
     if args.mcp_url:
         print(f"MCP server registered: {args.mcp_name} -> {args.mcp_url}")
+    if args.otel_enabled:
+        print(f"OpenClaw OTEL endpoint: {args.otel_endpoint}")
     if not dashboard_token:
         print("No dashboard token found")
         return 0
