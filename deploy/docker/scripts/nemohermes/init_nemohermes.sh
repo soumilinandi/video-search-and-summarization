@@ -400,7 +400,7 @@ configure_ngc_cli_in_sandbox() {
     return
   fi
   log "Installing NGC CLI inside sandbox ${NEMOCLAW_SANDBOX_NAME} (pip3 install --user ngcsdk)"
-  if ! nemoclaw sandbox exec -n "$NEMOCLAW_SANDBOX_NAME" --no-tty -- bash -c '
+  if ! nemoclaw sandbox exec "$NEMOCLAW_SANDBOX_NAME" --no-tty -- bash -s <<'SH'
     set -e
     if command -v ngc >/dev/null 2>&1 && ngc --version >/dev/null 2>&1; then
       echo "ngc already installed: $(ngc --version 2>&1 | head -1)"
@@ -415,7 +415,8 @@ configure_ngc_cli_in_sandbox() {
     fi
     /usr/local/bin/ngc --version 2>/dev/null \
       || "$HOME/.local/bin/ngc" --version
-  '; then
+SH
+  then
     log "In-sandbox NGC CLI install failed; ngc registry calls inside the sandbox will not work"
   fi
 }
@@ -541,41 +542,56 @@ if ! command -v hermes >/dev/null 2>&1; then
   exit 1
 fi
 
-PYTHON_BIN=""
-for candidate in \
-  /sandbox/.hermes/hermes-agent/.venv/bin/python \
-  "$(command -v python3 || true)" \
-  "$(command -v python || true)"
-do
-  if [ -n "$candidate" ] && [ -x "$candidate" ]; then
-    PYTHON_BIN="$candidate"
-    break
-  fi
-done
+CONFIG_FILE="${HERMES_CONFIG_FILE:-/sandbox/.hermes/config.yaml}"
+mkdir -p "$(dirname "$CONFIG_FILE")"
+touch "$CONFIG_FILE"
 
-if [ -z "$PYTHON_BIN" ]; then
-  echo "python is required to verify Hermes MCP support" >&2
-  exit 1
-fi
+python3 - "$CONFIG_FILE" "$VSS_ORCHESTRATOR_MCP_NAME" "$VSS_ORCHESTRATOR_MCP_URL" <<'PY'
+from pathlib import Path
+import sys
 
-if ! "$PYTHON_BIN" - <<'PY' >/dev/null 2>&1
-import importlib.util
-raise SystemExit(0 if importlib.util.find_spec("mcp") else 1)
+path = Path(sys.argv[1])
+name = sys.argv[2]
+url = sys.argv[3]
+text = path.read_text()
+
+lines = text.splitlines()
+out = []
+i = 0
+while i < len(lines):
+    line = lines[i]
+    if line.strip() == "mcp_servers:" and not line.startswith((" ", "\t")):
+        out.append(line)
+        i += 1
+        while i < len(lines):
+            current = lines[i]
+            if current and not current.startswith((" ", "\t")):
+                break
+            if current.startswith(f"  {name}:"):
+                i += 1
+                while i < len(lines):
+                    nested = lines[i]
+                    if nested.startswith("  ") and not nested.startswith("    "):
+                        break
+                    if nested and not nested.startswith((" ", "\t")):
+                        break
+                    i += 1
+                continue
+            out.append(current)
+            i += 1
+        out.extend([f"  {name}:", f'    url: "{url}"'])
+        continue
+    out.append(line)
+    i += 1
+
+if not any(line.strip() == "mcp_servers:" and not line.startswith((" ", "\t")) for line in out):
+    if out and out[-1].strip():
+        out.append("")
+    out.extend(["mcp_servers:", f"  {name}:", f'    url: "{url}"'])
+
+path.write_text("\n".join(out).rstrip() + "\n")
+print(f"Registered MCP server {name} -> {url} in {path}")
 PY
-then
-  if command -v uv >/dev/null 2>&1 && [ -d /sandbox/.hermes/hermes-agent ]; then
-    echo "Hermes MCP Python package is missing; installing Hermes MCP extra"
-    cd /sandbox/.hermes/hermes-agent
-    uv pip install -e ".[mcp]"
-  else
-    echo "Hermes MCP Python package is missing and could not be installed automatically." >&2
-    echo "Install it inside the sandbox with: cd /sandbox/.hermes/hermes-agent && uv pip install -e '.[mcp]'" >&2
-    exit 1
-  fi
-fi
-
-hermes mcp remove "$VSS_ORCHESTRATOR_MCP_NAME" >/dev/null 2>&1 || true
-hermes mcp add "$VSS_ORCHESTRATOR_MCP_NAME" --url "$VSS_ORCHESTRATOR_MCP_URL"
 SH
 }
 

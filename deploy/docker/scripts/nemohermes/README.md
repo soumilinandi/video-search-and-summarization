@@ -19,8 +19,8 @@ When you run `init_nemohermes.sh`, it:
 5. Installs each VSS skill from the repository `skills/` directory using
    `nemohermes <sandbox> skill install`.
 6. Uploads Hermes workspace files to `/sandbox/.hermes-data/workspace`.
-7. Verifies Hermes MCP support and registers the host-side VSS Orchestrator MCP
-   server with `hermes mcp add`.
+7. Registers the host-side VSS Orchestrator MCP server in
+   `/sandbox/.hermes/config.yaml`.
 8. Installs the NGC CLI inside the sandbox on a best-effort basis.
 9. Checks the Hermes API health endpoint on port `8642`.
 10. Optionally enables the Hermes web dashboard when `NEMOCLAW_HERMES_DASHBOARD=1`.
@@ -105,16 +105,19 @@ The sandbox reaches the host through:
 http://host.openshell.internal:9988/mcp
 ```
 
-The installer registers that URL with:
+The installer registers that URL in `/sandbox/.hermes/config.yaml` as:
 
-```bash
-hermes mcp add vss_orchestrator --url "http://host.openshell.internal:9988/mcp"
+```yaml
+mcp_servers:
+  vss_orchestrator:
+    url: "http://host.openshell.internal:9988/mcp"
 ```
 
-If the installer has to add the Hermes MCP Python extra, reconnect before using
-the tools. After starting or restarting the host-side MCP server, run
-`/reload-mcp` in an active NemoHermes session or reconnect so Hermes discovers
-the MCP tools.
+Start the host-side MCP server before connecting to NemoHermes so the agent can
+discover the server when the session starts. If a session was already open,
+reconnect it. `/reload-mcp` is only a recovery step for an already-running
+session. If native MCP tools are not listed, use the JSON-RPC fallback in
+`.hermes/workspace/TOOLS.md`.
 
 ## Connect
 

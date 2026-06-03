@@ -21,15 +21,17 @@ server:
 http://host.openshell.internal:9988/mcp
 ```
 
-The NemoHermes installer registers this endpoint with Hermes:
+The NemoHermes installer registers this endpoint in `/sandbox/.hermes/config.yaml`:
 
-```bash
-hermes mcp add vss_orchestrator --url "http://host.openshell.internal:9988/mcp"
+```yaml
+mcp_servers:
+  vss_orchestrator:
+    url: "http://host.openshell.internal:9988/mcp"
 ```
 
-If the host MCP server was started after Hermes connected, or the installer had
-to add Hermes MCP support, run `/reload-mcp` inside Hermes or reconnect before
-trying deployment tools.
+Start the host MCP server before connecting to Hermes. If Hermes was already
+connected, reconnect the session; `/reload-mcp` is only a recovery step for an
+already-running session.
 
 Use the orchestrator for host Docker work. Do not run `docker compose`,
 `deploy/docker/scripts/dev-profile.sh`, or raw host deployment commands from
