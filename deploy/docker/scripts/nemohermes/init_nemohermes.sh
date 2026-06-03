@@ -23,6 +23,8 @@ NEMOCLAW_POLICY_FILE="${NEMOCLAW_POLICY_FILE:-${VSS_REPO_DIR}/assets/vss_nemocla
 NEMOHERMES_WORKSPACE_DIR="${NEMOHERMES_WORKSPACE_DIR:-${VSS_REPO_DIR}/.hermes/workspace}"
 NEMOHERMES_REMOTE_WORKSPACE="${NEMOHERMES_REMOTE_WORKSPACE:-/sandbox/.hermes-data/workspace}"
 NEMOHERMES_API_PORT="${NEMOHERMES_API_PORT:-8642}"
+NEMOHERMES_MCP_SERVER_NAME="${NEMOHERMES_MCP_SERVER_NAME:-vss_orchestrator}"
+NEMOHERMES_MCP_URL="${NEMOHERMES_MCP_URL:-http://host.openshell.internal:9988/mcp}"
 NEMOCLAW_HERMES_DASHBOARD="${NEMOCLAW_HERMES_DASHBOARD:-0}"
 NEMOCLAW_HERMES_DASHBOARD_PORT="${NEMOCLAW_HERMES_DASHBOARD_PORT:-9119}"
 
@@ -71,6 +73,8 @@ Environment:
   OPENSHELL_PROVIDER_NAME     Inference provider name in OpenShell (default: nvidia)
   NEMOCLAW_MODEL              Model ID for Hermes inference
   NEMOHERMES_API_PORT         Hermes API port exposed by NemoHermes (default: 8642)
+  NEMOHERMES_MCP_URL          VSS Orchestrator MCP URL from the sandbox
+                              (default: http://host.openshell.internal:9988/mcp)
   NEMOCLAW_HERMES_DASHBOARD   Set to 1 to enable the optional Hermes web dashboard
   NEMOCLAW_HERMES_DASHBOARD_PORT
                               Hermes dashboard port when enabled (default: 9119)
@@ -520,6 +524,61 @@ upload_workspace_templates() {
   done
 }
 
+configure_hermes_mcp_server() {
+  if ! have openshell; then
+    log "OpenShell is not available; cannot configure Hermes MCP server"
+    return 1
+  fi
+
+  log "Configuring Hermes MCP server ${NEMOHERMES_MCP_SERVER_NAME} -> ${NEMOHERMES_MCP_URL}"
+  openshell sandbox exec -n "$NEMOCLAW_SANDBOX_NAME" -- \
+    env "VSS_ORCHESTRATOR_MCP_NAME=${NEMOHERMES_MCP_SERVER_NAME}" \
+      "VSS_ORCHESTRATOR_MCP_URL=${NEMOHERMES_MCP_URL}" \
+      sh -s <<'SH'
+set -e
+if ! command -v hermes >/dev/null 2>&1; then
+  echo "hermes CLI is required to configure MCP servers" >&2
+  exit 1
+fi
+
+PYTHON_BIN=""
+for candidate in \
+  /sandbox/.hermes/hermes-agent/.venv/bin/python \
+  "$(command -v python3 || true)" \
+  "$(command -v python || true)"
+do
+  if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+    PYTHON_BIN="$candidate"
+    break
+  fi
+done
+
+if [ -z "$PYTHON_BIN" ]; then
+  echo "python is required to verify Hermes MCP support" >&2
+  exit 1
+fi
+
+if ! "$PYTHON_BIN" - <<'PY' >/dev/null 2>&1
+import importlib.util
+raise SystemExit(0 if importlib.util.find_spec("mcp") else 1)
+PY
+then
+  if command -v uv >/dev/null 2>&1 && [ -d /sandbox/.hermes/hermes-agent ]; then
+    echo "Hermes MCP Python package is missing; installing Hermes MCP extra"
+    cd /sandbox/.hermes/hermes-agent
+    uv pip install -e ".[mcp]"
+  else
+    echo "Hermes MCP Python package is missing and could not be installed automatically." >&2
+    echo "Install it inside the sandbox with: cd /sandbox/.hermes/hermes-agent && uv pip install -e '.[mcp]'" >&2
+    exit 1
+  fi
+fi
+
+hermes mcp remove "$VSS_ORCHESTRATOR_MCP_NAME" >/dev/null 2>&1 || true
+hermes mcp add "$VSS_ORCHESTRATOR_MCP_NAME" --url "$VSS_ORCHESTRATOR_MCP_URL"
+SH
+}
+
 hermes_api_healthy() {
   have curl && curl -fsS "http://127.0.0.1:${NEMOHERMES_API_PORT}/health" >/dev/null 2>&1
 }
@@ -564,12 +623,15 @@ main() {
   apply_vss_policy
   install_vss_skills
   upload_workspace_templates
+  configure_hermes_mcp_server
   configure_ngc_cli_in_sandbox
   wait_for_hermes_api
 
   log "NemoHermes VSS setup complete."
   log "To connect, run: nemohermes ${NEMOCLAW_SANDBOX_NAME} connect"
   log "Hermes API: http://127.0.0.1:${NEMOHERMES_API_PORT}/v1"
+  log "VSS Orchestrator MCP: ${NEMOHERMES_MCP_URL}"
+  log "After starting or restarting the host MCP server, run /reload-mcp in Hermes or reconnect."
   if is_truthy "${NEMOCLAW_HERMES_DASHBOARD}"; then
     log "Hermes dashboard: http://127.0.0.1:${NEMOCLAW_HERMES_DASHBOARD_PORT}/"
   fi
@@ -581,6 +643,7 @@ export NEMOCLAW_SANDBOX_NAME NEMOCLAW_AGENT NEMOCLAW_PROVIDER OPENSHELL_PROVIDER
 export NEMOCLAW_NON_INTERACTIVE NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE
 export NEMOCLAW_ENDPOINT_URL COMPATIBLE_API_KEY NEMOCLAW_REPO_DIR NEMOCLAW_POLICY_FILE
 export NEMOHERMES_WORKSPACE_DIR NEMOHERMES_REMOTE_WORKSPACE NEMOHERMES_API_PORT
+export NEMOHERMES_MCP_SERVER_NAME NEMOHERMES_MCP_URL
 export NEMOCLAW_HERMES_DASHBOARD NEMOCLAW_HERMES_DASHBOARD_PORT
 
 main

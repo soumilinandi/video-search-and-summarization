@@ -19,9 +19,11 @@ When you run `init_nemohermes.sh`, it:
 5. Installs each VSS skill from the repository `skills/` directory using
    `nemohermes <sandbox> skill install`.
 6. Uploads Hermes workspace files to `/sandbox/.hermes-data/workspace`.
-7. Installs the NGC CLI inside the sandbox on a best-effort basis.
-8. Checks the Hermes API health endpoint on port `8642`.
-9. Optionally enables the Hermes web dashboard when `NEMOCLAW_HERMES_DASHBOARD=1`.
+7. Verifies Hermes MCP support and registers the host-side VSS Orchestrator MCP
+   server with `hermes mcp add`.
+8. Installs the NGC CLI inside the sandbox on a best-effort basis.
+9. Checks the Hermes API health endpoint on port `8642`.
+10. Optionally enables the Hermes web dashboard when `NEMOCLAW_HERMES_DASHBOARD=1`.
 
 It intentionally does not update `openclaw.json`, install the `.openclaw`
 plugin, restart `openclaw-gateway`, or print an OpenClaw dashboard URL.
@@ -84,6 +86,7 @@ COMPATIBLE_API_KEY=nemoclaw-local-qwen \
 - `NGC_CLI_API_KEY`: optional sandbox credential and host orchestrator credential
 - `NEMOCLAW_POLICY_FILE`: VSS sandbox policy file
 - `NEMOHERMES_API_PORT`: Hermes API port, default `8642`
+- `NEMOHERMES_MCP_URL`: VSS Orchestrator MCP URL from the sandbox, default `http://host.openshell.internal:9988/mcp`
 - `NEMOCLAW_HERMES_DASHBOARD`: set to `1`/`true` to enable the optional Hermes web dashboard
 - `NEMOCLAW_HERMES_DASHBOARD_PORT`: Hermes dashboard port, default `9119`
 
@@ -91,13 +94,27 @@ COMPATIBLE_API_KEY=nemoclaw-local-qwen \
 
 For sandboxed NemoHermes, host Docker work still happens through the
 host-side VSS Orchestrator MCP server. Start it from the notebook, then ask
-Hermes to deploy or inspect VSS using the `vss_orchestrator__*` tools.
+Hermes to deploy or inspect VSS using the VSS Orchestrator MCP tools. Hermes
+may display client-specific tool prefixes; match the underlying operation names
+such as `profiles`, `prereqs`, `docker_generate`, `docker_up`, and
+`docker_status`.
 
 The sandbox reaches the host through:
 
 ```text
 http://host.openshell.internal:9988/mcp
 ```
+
+The installer registers that URL with:
+
+```bash
+hermes mcp add vss_orchestrator --url "http://host.openshell.internal:9988/mcp"
+```
+
+If the installer has to add the Hermes MCP Python extra, reconnect before using
+the tools. After starting or restarting the host-side MCP server, run
+`/reload-mcp` in an active NemoHermes session or reconnect so Hermes discovers
+the MCP tools.
 
 ## Connect
 

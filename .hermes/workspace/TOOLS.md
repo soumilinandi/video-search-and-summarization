@@ -21,12 +21,28 @@ server:
 http://host.openshell.internal:9988/mcp
 ```
 
+The NemoHermes installer registers this endpoint with Hermes:
+
+```bash
+hermes mcp add vss_orchestrator --url "http://host.openshell.internal:9988/mcp"
+```
+
+If the host MCP server was started after Hermes connected, or the installer had
+to add Hermes MCP support, run `/reload-mcp` inside Hermes or reconnect before
+trying deployment tools.
+
 Use the orchestrator for host Docker work. Do not run `docker compose`,
 `deploy/docker/scripts/dev-profile.sh`, or raw host deployment commands from
 inside this sandbox.
 
-If Hermes exposes `vss_orchestrator__*` tools natively, use those tools. If
-they are not registered, call the MCP server with JSON-RPC over HTTP.
+Use the Hermes MCP tools from the `vss_orchestrator` server when available.
+The exact displayed tool names may be prefixed by Hermes. Match by the
+underlying VSS Orchestrator operation: `profiles`, `prereqs`,
+`docker_generate`, `docker_read`, `docker_up`, `docker_status`, `docker_list`,
+`docker_logs`, and `docker_down`.
+
+If the MCP tools are not registered after `/reload-mcp`, call the MCP server
+with JSON-RPC over HTTP.
 
 ## MCP Reachability
 
@@ -78,13 +94,13 @@ Map user intent to the smallest safe chain:
 
 | User asks | Tool chain |
 |---|---|
-| list profiles | `vss_orchestrator__profiles` |
-| check prerequisites | `vss_orchestrator__prereqs` |
-| generate artifacts | `vss_orchestrator__docker_generate` |
+| list profiles | `profiles` |
+| check prerequisites | `prereqs` |
+| generate artifacts | `docker_generate` |
 | deploy a profile | `prereqs` -> `docker_generate` -> `docker_up` -> poll `docker_status` |
-| inspect running services | `vss_orchestrator__docker_list` |
-| read logs | `vss_orchestrator__docker_logs` |
-| tear down | `vss_orchestrator__docker_down` -> poll `docker_status` |
+| inspect running services | `docker_list` |
+| read logs | `docker_logs` |
+| tear down | `docker_down` -> poll `docker_status` |
 
 For long deploys, report one short progress update after each poll. Poll at the
 cadence returned by the orchestrator.
