@@ -33,8 +33,8 @@ Start the host MCP server before connecting to Hermes. If Hermes was already
 connected, reconnect the session.
 
 Use the orchestrator for host Docker work. Do not run `docker compose`,
-`deploy/docker/scripts/dev-profile.sh`, or raw host deployment commands from
-inside this sandbox.
+`deploy/docker/scripts/dev-profile.sh`, `nvidia-smi`, Docker prerequisite
+shell probes, or raw host deployment commands from inside this sandbox.
 
 Use the Hermes MCP tools from the `vss_orchestrator` server when available.
 The exact displayed tool names may be prefixed by Hermes. Match by the
@@ -44,6 +44,10 @@ underlying VSS Orchestrator operation: `profiles`, `prereqs`,
 
 If MCP tools are not registered, verify the HTTP endpoint below and reconnect
 or use the installed command bridge before deploying from the sandbox.
+
+Do not replace orchestrator calls with skill-only reasoning. The VSS skills
+describe how deployment works, but the host checks and deploy operations must
+go through `vss_orchestrator` MCP tools or `/sandbox/bin/vss-orchestrator`.
 
 ## Orchestrator Command Bridge
 
@@ -83,12 +87,12 @@ Map user intent to the smallest safe chain:
 
 | User asks | Tool chain |
 |---|---|
-| list profiles | `profiles` |
-| check prerequisites | `prereqs` |
-| generate artifacts | `docker_generate` |
+| list profiles | `profiles` or `/sandbox/bin/vss-orchestrator profiles` |
+| check prerequisites | `prereqs` or `/sandbox/bin/vss-orchestrator prereqs` |
+| generate artifacts | `docker_generate` or `/sandbox/bin/vss-orchestrator docker_generate '<json>'` |
 | deploy a profile | `prereqs` -> `docker_generate` -> `docker_up` -> poll `docker_status` |
-| inspect running services | `docker_list` |
-| read logs | `docker_logs` |
+| inspect running services | `docker_list` or `/sandbox/bin/vss-orchestrator docker_list` |
+| read logs | `docker_logs` or `/sandbox/bin/vss-orchestrator docker_logs '<json>'` |
 | tear down | `docker_down` -> poll `docker_status` |
 
 For long deploys, report one short progress update after each poll. Poll at the

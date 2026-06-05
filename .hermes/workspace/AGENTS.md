@@ -20,7 +20,14 @@ If those tools are not listed, use the installed command bridge instead:
 /sandbox/bin/vss-orchestrator <tool> '<json arguments>'
 ```
 
-Do not run raw host deployment commands from the sandbox. Use MCP tools for:
+When the user asks for the VSS orchestrator, deployment profiles,
+prerequisites, compose generation, deploy, status, logs, or teardown, use the
+Hermes MCP tools or `/sandbox/bin/vss-orchestrator`. Do not satisfy these
+requests by only reading a skill and running local shell checks in the sandbox.
+Skills are reference material; the orchestrator is the execution path.
+
+Do not run raw host deployment commands from the sandbox. Use orchestrator tools
+for:
 
 - prerequisites
 - compose artifact generation
