@@ -5,11 +5,10 @@
 3. Check the host orchestrator:
 
 ```bash
-curl -s -o /dev/null --max-time 5 "http://${HOST_IP}:9988/" \
-  && echo "orchestrator host reachable"
+/sandbox/bin/vss-orchestrator health
 ```
 
-If this fails, tell the user to start the VSS Orchestrator MCP server from the
-NemoHermes notebook before asking you to deploy VSS.
+If this cannot connect, tell the user to start the VSS Orchestrator MCP server
+from the NemoHermes notebook before asking you to deploy VSS.
 
 After the first successful session, this file can be ignored.

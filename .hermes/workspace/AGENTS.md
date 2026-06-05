@@ -13,9 +13,12 @@ Before starting user work:
 
 This is a NemoClaw/OpenShell sandbox running Hermes. Host Docker and VSS
 deployment operations go through the VSS Orchestrator MCP server on the host.
-If deployment tools are missing after the host MCP server starts, ask the user
-to reconnect. Use `/reload-mcp` only as a recovery step for an already-running
-session.
+Prefer the Hermes MCP tools from `vss_orchestrator` when they are available.
+If those tools are not listed, use the installed command bridge instead:
+
+```bash
+/sandbox/bin/vss-orchestrator <tool> '<json arguments>'
+```
 
 Do not run raw host deployment commands from the sandbox. Use MCP tools for:
 

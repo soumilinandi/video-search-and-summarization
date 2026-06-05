@@ -30,8 +30,7 @@ mcp_servers:
 ```
 
 Start the host MCP server before connecting to Hermes. If Hermes was already
-connected, reconnect the session; `/reload-mcp` is only a recovery step for an
-already-running session.
+connected, reconnect the session.
 
 Use the orchestrator for host Docker work. Do not run `docker compose`,
 `deploy/docker/scripts/dev-profile.sh`, or raw host deployment commands from
@@ -43,51 +42,39 @@ underlying VSS Orchestrator operation: `profiles`, `prereqs`,
 `docker_generate`, `docker_read`, `docker_up`, `docker_status`, `docker_list`,
 `docker_logs`, and `docker_down`.
 
-If the MCP tools are not registered after `/reload-mcp`, call the MCP server
-with JSON-RPC over HTTP.
+If MCP tools are not registered, verify the HTTP endpoint below and reconnect
+or use the installed command bridge before deploying from the sandbox.
+
+## Orchestrator Command Bridge
+
+The NemoHermes installer uploads:
+
+```bash
+/sandbox/bin/vss-orchestrator
+```
+
+Use it when Hermes MCP tools are not listed. It calls the same HTTP MCP endpoint
+and maps the first argument to `vss_orchestrator__<tool>`.
+
+```bash
+/sandbox/bin/vss-orchestrator health
+/sandbox/bin/vss-orchestrator list
+/sandbox/bin/vss-orchestrator profiles
+/sandbox/bin/vss-orchestrator prereqs
+/sandbox/bin/vss-orchestrator docker_generate '{"profile":"base"}'
+/sandbox/bin/vss-orchestrator docker_up '{"docker_compose_id":"..."}'
+/sandbox/bin/vss-orchestrator docker_status '{"docker_compose_id":"..."}'
+```
+
+Pass tool arguments as one JSON object, or use `-` to read the JSON object from
+stdin.
 
 ## MCP Reachability
 
 Check whether the sandbox can reach the host orchestrator:
 
 ```bash
-curl -s -o /dev/null --max-time 5 "http://${HOST_IP}:9988/" \
-  && echo "orchestrator host reachable"
-```
-
-Do not use `curl -f` for this generic check. Some MCP routes return 404 from
-`GET /` even when the server is reachable.
-
-## Manual MCP Handshake
-
-Use this fallback when native Hermes MCP tooling is unavailable.
-
-```bash
-SID=$(curl -sN -D /tmp/vss-mcp-headers.txt -X POST "${VSS_ORCHESTRATOR_MCP_URL}" \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json, text/event-stream' \
-  --data @- <<'EOF' >/dev/null
-{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"vss-nemohermes","version":"0.1.0"}}}
-EOF
-  grep -i '^mcp-session-id:' /tmp/vss-mcp-headers.txt | awk '{print $2}' | tr -d '\r')
-
-curl -s -X POST "${VSS_ORCHESTRATOR_MCP_URL}" \
-  -H "Mcp-Session-Id: $SID" \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json, text/event-stream' \
-  --data '{"jsonrpc":"2.0","method":"notifications/initialized"}'
-```
-
-Call a tool:
-
-```bash
-curl -s -X POST "${VSS_ORCHESTRATOR_MCP_URL}" \
-  -H "Mcp-Session-Id: $SID" \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json, text/event-stream' \
-  --data @- <<'EOF'
-{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"vss_orchestrator__profiles","arguments":{}}}
-EOF
+/sandbox/bin/vss-orchestrator health
 ```
 
 ## Deployment Tool Chains

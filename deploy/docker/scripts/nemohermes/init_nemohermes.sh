@@ -21,6 +21,7 @@ NVIDIA_BASE_URL="${NVIDIA_BASE_URL:-https://integrate.api.nvidia.com/v1}"
 NEMOCLAW_SHIM_DIR="${HOME}/.local/bin"
 NEMOCLAW_POLICY_FILE="${NEMOCLAW_POLICY_FILE:-${VSS_REPO_DIR}/assets/vss_nemoclaw_policy.yaml}"
 NEMOHERMES_WORKSPACE_DIR="${NEMOHERMES_WORKSPACE_DIR:-${VSS_REPO_DIR}/.hermes/workspace}"
+NEMOHERMES_ORCHESTRATOR_WRAPPER_PATH="${NEMOHERMES_ORCHESTRATOR_WRAPPER_PATH:-${SCRIPT_DIR}/vss_orchestrator_wrapper.py}"
 NEMOHERMES_REMOTE_WORKSPACE="${NEMOHERMES_REMOTE_WORKSPACE:-/sandbox/.hermes-data/workspace}"
 NEMOHERMES_API_PORT="${NEMOHERMES_API_PORT:-8642}"
 NEMOHERMES_MCP_SERVER_NAME="${NEMOHERMES_MCP_SERVER_NAME:-vss_orchestrator}"
@@ -525,6 +526,24 @@ upload_workspace_templates() {
   done
 }
 
+install_vss_orchestrator_wrapper() {
+  if ! have openshell; then
+    log "OpenShell is not available; cannot install VSS orchestrator wrapper"
+    return 1
+  fi
+
+  if [ ! -f "$NEMOHERMES_ORCHESTRATOR_WRAPPER_PATH" ]; then
+    log "ERROR: VSS orchestrator wrapper ${NEMOHERMES_ORCHESTRATOR_WRAPPER_PATH} is missing"
+    return 1
+  fi
+
+  log "Installing VSS Orchestrator command wrapper in sandbox ${NEMOCLAW_SANDBOX_NAME}"
+  if ! openshell sandbox exec -n "$NEMOCLAW_SANDBOX_NAME" -- sh -c 'mkdir -p /sandbox/bin && cat > /sandbox/bin/vss-orchestrator.tmp && chmod 0755 /sandbox/bin/vss-orchestrator.tmp && mv /sandbox/bin/vss-orchestrator.tmp /sandbox/bin/vss-orchestrator' < "$NEMOHERMES_ORCHESTRATOR_WRAPPER_PATH"; then
+    log "ERROR: failed to install /sandbox/bin/vss-orchestrator"
+    return 1
+  fi
+}
+
 configure_hermes_mcp_server() {
   if ! have openshell; then
     log "OpenShell is not available; cannot configure Hermes MCP server"
@@ -639,6 +658,7 @@ main() {
   apply_vss_policy
   install_vss_skills
   upload_workspace_templates
+  install_vss_orchestrator_wrapper
   configure_hermes_mcp_server
   configure_ngc_cli_in_sandbox
   wait_for_hermes_api
@@ -647,7 +667,8 @@ main() {
   log "To connect, run: nemohermes ${NEMOCLAW_SANDBOX_NAME} connect"
   log "Hermes API: http://127.0.0.1:${NEMOHERMES_API_PORT}/v1"
   log "VSS Orchestrator MCP: ${NEMOHERMES_MCP_URL}"
-  log "After starting or restarting the host MCP server, run /reload-mcp in Hermes or reconnect."
+  log "VSS Orchestrator command: /sandbox/bin/vss-orchestrator"
+  log "Start the host MCP server before connecting to Hermes; reconnect for MCP discovery."
   if is_truthy "${NEMOCLAW_HERMES_DASHBOARD}"; then
     log "Hermes dashboard: http://127.0.0.1:${NEMOCLAW_HERMES_DASHBOARD_PORT}/"
   fi
@@ -658,7 +679,7 @@ validate_settings
 export NEMOCLAW_SANDBOX_NAME NEMOCLAW_AGENT NEMOCLAW_PROVIDER OPENSHELL_PROVIDER_NAME NEMOCLAW_MODEL
 export NEMOCLAW_NON_INTERACTIVE NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE
 export NEMOCLAW_ENDPOINT_URL COMPATIBLE_API_KEY NEMOCLAW_REPO_DIR NEMOCLAW_POLICY_FILE
-export NEMOHERMES_WORKSPACE_DIR NEMOHERMES_REMOTE_WORKSPACE NEMOHERMES_API_PORT
+export NEMOHERMES_WORKSPACE_DIR NEMOHERMES_ORCHESTRATOR_WRAPPER_PATH NEMOHERMES_REMOTE_WORKSPACE NEMOHERMES_API_PORT
 export NEMOHERMES_MCP_SERVER_NAME NEMOHERMES_MCP_URL
 export NEMOCLAW_HERMES_DASHBOARD NEMOCLAW_HERMES_DASHBOARD_PORT
 

@@ -19,11 +19,13 @@ When you run `init_nemohermes.sh`, it:
 5. Installs each VSS skill from the repository `skills/` directory using
    `nemohermes <sandbox> skill install`.
 6. Uploads Hermes workspace files to `/sandbox/.hermes-data/workspace`.
-7. Registers the host-side VSS Orchestrator MCP server in
+7. Installs `/sandbox/bin/vss-orchestrator`, a small command bridge for the
+   host-side HTTP MCP endpoint.
+8. Registers the host-side VSS Orchestrator MCP server in
    `/sandbox/.hermes/config.yaml`.
-8. Installs the NGC CLI inside the sandbox on a best-effort basis.
-9. Checks the Hermes API health endpoint on port `8642`.
-10. Optionally enables the Hermes web dashboard when `NEMOCLAW_HERMES_DASHBOARD=1`.
+9. Installs the NGC CLI inside the sandbox on a best-effort basis.
+10. Checks the Hermes API health endpoint on port `8642`.
+11. Optionally enables the Hermes web dashboard when `NEMOCLAW_HERMES_DASHBOARD=1`.
 
 It intentionally does not update `openclaw.json`, install the `.openclaw`
 plugin, restart `openclaw-gateway`, or print an OpenClaw dashboard URL.
@@ -115,9 +117,18 @@ mcp_servers:
 
 Start the host-side MCP server before connecting to NemoHermes so the agent can
 discover the server when the session starts. If a session was already open,
-reconnect it. `/reload-mcp` is only a recovery step for an already-running
-session. If native MCP tools are not listed, use the JSON-RPC fallback in
-`.hermes/workspace/TOOLS.md`.
+reconnect it.
+
+If Hermes MCP tools are not listed, use the installed command bridge:
+
+```bash
+/sandbox/bin/vss-orchestrator profiles
+/sandbox/bin/vss-orchestrator prereqs
+/sandbox/bin/vss-orchestrator docker_generate '{"profile":"base"}'
+```
+
+The command bridge talks to the same HTTP MCP endpoint and keeps host Docker
+operations outside the sandbox.
 
 ## Connect
 
