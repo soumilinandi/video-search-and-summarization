@@ -27,6 +27,17 @@ NEMOCLAW_SHIM_DIR="${HOME}/.local/bin"
 OPENCLAW_CONFIG_UPDATE_SCRIPT="${OPENCLAW_CONFIG_UPDATE_SCRIPT:-${SCRIPT_DIR}/update_openclaw_config.py}"
 NEMOCLAW_POLICY_FILE="${NEMOCLAW_POLICY_FILE:-${VSS_REPO_DIR}/assets/vss_nemoclaw_policy.yaml}"
 OPENCLAW_PLUGIN_DIR="${OPENCLAW_PLUGIN_DIR:-${VSS_REPO_DIR}/.openclaw}"
+OPENCLAW_OTEL_ENABLED="${OPENCLAW_OTEL_ENABLED:-${NEMOCLAW_OPENCLAW_OTEL:-0}}"
+OPENCLAW_OTEL_ENDPOINT="${OPENCLAW_OTEL_ENDPOINT:-${NEMOCLAW_OPENCLAW_OTEL_ENDPOINT:-http://host.openshell.internal:4318}}"
+OPENCLAW_OTEL_SERVICE_NAME="${OPENCLAW_OTEL_SERVICE_NAME:-${NEMOCLAW_OPENCLAW_OTEL_SERVICE_NAME:-openclaw-gateway}}"
+OPENCLAW_OTEL_SAMPLE_RATE="${OPENCLAW_OTEL_SAMPLE_RATE:-${NEMOCLAW_OPENCLAW_OTEL_SAMPLE_RATE:-1}}"
+OPENCLAW_OTEL_CAPTURE_CONTENT="${OPENCLAW_OTEL_CAPTURE_CONTENT:-0}"
+OPENCLAW_OTEL_CAPTURE_INPUT_MESSAGES="${OPENCLAW_OTEL_CAPTURE_INPUT_MESSAGES:-1}"
+OPENCLAW_OTEL_CAPTURE_OUTPUT_MESSAGES="${OPENCLAW_OTEL_CAPTURE_OUTPUT_MESSAGES:-1}"
+OPENCLAW_OTEL_CAPTURE_TOOL_INPUTS="${OPENCLAW_OTEL_CAPTURE_TOOL_INPUTS:-1}"
+OPENCLAW_OTEL_CAPTURE_TOOL_OUTPUTS="${OPENCLAW_OTEL_CAPTURE_TOOL_OUTPUTS:-1}"
+OPENCLAW_OTEL_CAPTURE_SYSTEM_PROMPT="${OPENCLAW_OTEL_CAPTURE_SYSTEM_PROMPT:-0}"
+OPENCLAW_OTEL_CAPTURE_TOOL_DEFINITIONS="${OPENCLAW_OTEL_CAPTURE_TOOL_DEFINITIONS:-0}"
 VSS_NAMESPACE="${VSS_NAMESPACE:-openshell}"
 VSS_REMOTE_CONFIG_PATH="/sandbox/.openclaw/openclaw.json"
 
@@ -36,6 +47,21 @@ log() {
 
 have() {
   command -v "$1" >/dev/null 2>&1
+}
+
+is_truthy() {
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+json_bool() {
+  if is_truthy "$1"; then
+    printf 'true'
+  else
+    printf 'false'
+  fi
 }
 
 node_major_version() {
@@ -74,6 +100,10 @@ Environment (non-interactive Nemoclaw / OpenShell):
   OPENSHELL_PROVIDER_NAME     Name for openshell OpenAI-compatible provider (default: nvidia)
   OPENCLAW_PLUGIN_DIR              Path to the OpenClaw plugin source to pack and install
                               (default: <VSS_REPO_DIR>/.openclaw)
+  OPENCLAW_OTEL_ENABLED       Set to 1/true to enable OpenClaw diagnostics OTEL export
+  OPENCLAW_OTEL_ENDPOINT      OTLP/HTTP collector endpoint (default: http://host.openshell.internal:4318)
+  OPENCLAW_OTEL_CAPTURE_CONTENT
+                              Set to 1/true to capture messages and tool payloads in OTEL spans
 EOF
 }
 
@@ -398,7 +428,7 @@ restart_vss_openclaw_gateway() {
 
   log "Restarting OpenClaw gateway in sandbox ${NEMOCLAW_SANDBOX_NAME}"
   openshell sandbox exec -n "${NEMOCLAW_SANDBOX_NAME}" -- sh -lc \
-    "pkill -TERM -f '[o]penclaw-gateway' || true" </dev/null || true
+    "pkill -TERM -f '[o]penclaw-gateway' || true; pkill -TERM -f '[o]penclaw' || true" </dev/null || true
 
   for attempt in $(seq 1 30); do
     if openshell sandbox exec -n "${NEMOCLAW_SANDBOX_NAME}" -- sh -lc \
@@ -411,6 +441,46 @@ restart_vss_openclaw_gateway() {
 
   log "WARN: OpenClaw gateway did not become healthy within 30 seconds after restart"
   return 1
+}
+
+configure_openclaw_otel_content_capture() {
+  local capture input_messages output_messages tool_inputs tool_outputs system_prompt tool_definitions update_cmd
+
+  if ! is_truthy "${OPENCLAW_OTEL_ENABLED}" || ! is_truthy "${OPENCLAW_OTEL_CAPTURE_CONTENT}"; then
+    return
+  fi
+
+  if ! have openshell; then
+    log "OpenShell is not available; cannot configure OpenClaw OTEL content capture"
+    return 1
+  fi
+
+  capture="$(json_bool "${OPENCLAW_OTEL_CAPTURE_CONTENT}")"
+  input_messages="$(json_bool "${OPENCLAW_OTEL_CAPTURE_INPUT_MESSAGES}")"
+  output_messages="$(json_bool "${OPENCLAW_OTEL_CAPTURE_OUTPUT_MESSAGES}")"
+  tool_inputs="$(json_bool "${OPENCLAW_OTEL_CAPTURE_TOOL_INPUTS}")"
+  tool_outputs="$(json_bool "${OPENCLAW_OTEL_CAPTURE_TOOL_OUTPUTS}")"
+  system_prompt="$(json_bool "${OPENCLAW_OTEL_CAPTURE_SYSTEM_PROMPT}")"
+  tool_definitions="$(json_bool "${OPENCLAW_OTEL_CAPTURE_TOOL_DEFINITIONS}")"
+
+  printf -v update_cmd 'import json; p="%s"; cfg=json.load(open(p)); diag=cfg.setdefault("diagnostics",{}); diag["enabled"]=True; otel=diag.setdefault("otel",{}); otel["captureContent"]={"enabled":%s,"inputMessages":%s,"outputMessages":%s,"toolInputs":%s,"toolOutputs":%s,"systemPrompt":%s,"toolDefinitions":%s}; json.dump(cfg, open(p,"w"), indent=2)' \
+    "${VSS_REMOTE_CONFIG_PATH}" \
+    "${capture}" \
+    "${input_messages}" \
+    "${output_messages}" \
+    "${tool_inputs}" \
+    "${tool_outputs}" \
+    "${system_prompt}" \
+    "${tool_definitions}"
+
+  log "Configuring OpenClaw OTEL content capture in ${VSS_REMOTE_CONFIG_PATH}"
+  if ! openshell sandbox exec -n "${NEMOCLAW_SANDBOX_NAME}" -- python3 -c "${update_cmd}" </dev/null; then
+    log "ERROR: failed to configure OpenClaw OTEL content capture"
+    return 1
+  fi
+
+  restart_vss_openclaw_gateway || return 1
+  ensure_dashboard_forward || return 1
 }
 
 install_vss_openclaw_plugin() {
@@ -521,6 +591,12 @@ export_provider_env() {
   export NEMOCLAW_NON_INTERACTIVE
   export NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE
   export NVIDIA_API_KEY
+  if is_truthy "${OPENCLAW_OTEL_ENABLED}"; then
+    export NEMOCLAW_OPENCLAW_OTEL=1
+    export NEMOCLAW_OPENCLAW_OTEL_ENDPOINT="${OPENCLAW_OTEL_ENDPOINT}"
+    export NEMOCLAW_OPENCLAW_OTEL_SERVICE_NAME="${OPENCLAW_OTEL_SERVICE_NAME}"
+    export NEMOCLAW_OPENCLAW_OTEL_SAMPLE_RATE="${OPENCLAW_OTEL_SAMPLE_RATE}"
+  fi
   if [ "${NEMOCLAW_PROVIDER}" = "custom" ]; then
     export NEMOCLAW_ENDPOINT_URL
     export COMPATIBLE_API_KEY
@@ -622,6 +698,7 @@ main() {
   # Policy/config updates can briefly flap gateway readiness before plugin install.
   wait_for_sandbox_ready "${NEMOCLAW_POST_CONFIG_READY_TIMEOUT:-60}"
   install_vss_openclaw_plugin
+  configure_openclaw_otel_content_capture
 
   log "To use nemoclaw in your current shell, run:"
   printf '\n  . "%s/nvm.sh"\n\n' "${NVM_DIR:-$HOME/.nvm}"
@@ -632,5 +709,8 @@ validate_custom_provider
 export NEMOCLAW_SANDBOX_NAME NEMOCLAW_PROVIDER OPENSHELL_PROVIDER_NAME NEMOCLAW_MODEL NEMOCLAW_NON_INTERACTIVE NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE
 export NEMOCLAW_ENDPOINT_URL COMPATIBLE_API_KEY
 export NEMOCLAW_REPO_DIR OPENCLAW_CONFIG_UPDATE_SCRIPT NEMOCLAW_POLICY_FILE
+export OPENCLAW_OTEL_ENABLED OPENCLAW_OTEL_ENDPOINT OPENCLAW_OTEL_SERVICE_NAME OPENCLAW_OTEL_SAMPLE_RATE
+export OPENCLAW_OTEL_CAPTURE_CONTENT OPENCLAW_OTEL_CAPTURE_INPUT_MESSAGES OPENCLAW_OTEL_CAPTURE_OUTPUT_MESSAGES
+export OPENCLAW_OTEL_CAPTURE_TOOL_INPUTS OPENCLAW_OTEL_CAPTURE_TOOL_OUTPUTS OPENCLAW_OTEL_CAPTURE_SYSTEM_PROMPT OPENCLAW_OTEL_CAPTURE_TOOL_DEFINITIONS
 
 main
