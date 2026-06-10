@@ -282,7 +282,7 @@ configure_openshell_provider() {
     log "Provider ${action} failed; continuing with existing provider config"
   fi
 
-  openshell inference set --provider "$OPENSHELL_PROVIDER_NAME" --model "$NEMOCLAW_MODEL" --timeout 300
+  openshell inference set --provider "$OPENSHELL_PROVIDER_NAME" --model "$NEMOCLAW_MODEL" --timeout 300 --no-verify
   openshell inference get || true
 }
 
