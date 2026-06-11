@@ -56,11 +56,11 @@ is_truthy() {
   esac
 }
 
-json_bool() {
+python_bool() {
   if is_truthy "$1"; then
-    printf 'true'
+    printf 'True'
   else
-    printf 'false'
+    printf 'False'
   fi
 }
 
@@ -318,10 +318,24 @@ forward_owned_by_sandbox() {
   forward_running_for_sandbox "$port" "$sandbox_name" || forward_process_running_for_sandbox "$port" "$sandbox_name"
 }
 
+port_listener_summary() {
+  local port="$1"
+
+  if have lsof; then
+    lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || true
+    return
+  fi
+
+  if have ss; then
+    ss -ltnp "sport = :$port" 2>/dev/null || true
+  fi
+}
+
 dashboard_forward_healthy() {
   local port="$1"
-  have curl && curl -fsS "http://127.0.0.1:${port}/health" 2>/dev/null \
-    | grep -q '"ok"[[:space:]]*:[[:space:]]*true'
+  have curl || return 1
+  curl -fsS "http://127.0.0.1:${port}/health" >/dev/null 2>&1 \
+    || curl -fsS "http://127.0.0.1:${port}/" >/dev/null 2>&1
 }
 
 ensure_dashboard_forward() {
@@ -343,20 +357,34 @@ ensure_dashboard_forward() {
 
   openshell forward stop "$port" "$NEMOCLAW_SANDBOX_NAME" >/dev/null 2>&1 || true
   pkill -TERM -f "[o]penshell forward start ${port} ${NEMOCLAW_SANDBOX_NAME}" >/dev/null 2>&1 || true
+  pkill -TERM -f "[o]penshell forward start --background ${port} ${NEMOCLAW_SANDBOX_NAME}" >/dev/null 2>&1 || true
 
-  if have setsid; then
+  local listeners
+  listeners="$(port_listener_summary "$port")"
+  if [ -n "$listeners" ]; then
+    log "ERROR: local port ${port} is already in use by another process. Stop that listener or set NEMOCLAW_DASHBOARD_PORT to a free port before rerunning."
+    printf '%s\n' "$listeners" | sed 's/^/[init_nemoclaw] port listener: /' >&2
+    return 1
+  fi
+
+  openshell forward start --background "$port" "$NEMOCLAW_SANDBOX_NAME" </dev/null >"$forward_log" 2>&1 || true
+  if ! forward_process_running_for_sandbox "$port" "$NEMOCLAW_SANDBOX_NAME" && ! forward_running_for_sandbox "$port" "$NEMOCLAW_SANDBOX_NAME" && have setsid; then
     setsid -f openshell forward start "$port" "$NEMOCLAW_SANDBOX_NAME" </dev/null >"$forward_log" 2>&1 || true
-  else
-    openshell forward start --background "$port" "$NEMOCLAW_SANDBOX_NAME" </dev/null >"$forward_log" 2>&1 || true
   fi
 
   for _attempt in $(seq 1 30); do
-    if forward_owned_by_sandbox "$port" "$NEMOCLAW_SANDBOX_NAME" && dashboard_forward_healthy "$port"; then
+    if dashboard_forward_healthy "$port"; then
       log "Dashboard port-forward on ${port} is healthy for sandbox ${NEMOCLAW_SANDBOX_NAME}"
       return
     fi
     sleep 1
   done
+
+  if forward_owned_by_sandbox "$port" "$NEMOCLAW_SANDBOX_NAME" \
+      || { [ -f "$forward_log" ] && grep -q "Forwarding port ${port} to sandbox ${NEMOCLAW_SANDBOX_NAME}" "$forward_log"; }; then
+    log "WARN: dashboard forward on ${port} was started for sandbox ${NEMOCLAW_SANDBOX_NAME}, but the local HTTP readiness probe did not respond yet; continuing"
+    return
+  fi
 
   log "ERROR: could not (re)start dashboard forward on ${port}; the OpenClaw UI and /hooks endpoint are unreachable at http://127.0.0.1:${port}"
   if [ -f "$forward_log" ]; then
@@ -417,29 +445,29 @@ apply_vss_policy() {
   nemoclaw "$NEMOCLAW_SANDBOX_NAME" policy-add --from-file "$policy_file" --yes
 }
 
-restart_vss_openclaw_gateway() {
-  local port attempt
-  port="${NEMOCLAW_DASHBOARD_PORT:-18789}"
-
+print_vss_gateway_log() {
   if ! have openshell; then
-    log "OpenShell is not available; cannot restart OpenClaw gateway"
+    return
+  fi
+
+  openshell sandbox exec -n "${NEMOCLAW_SANDBOX_NAME}" -- sh -lc \
+    "test -f /tmp/gateway.log && tail -n 120 /tmp/gateway.log || true" </dev/null 2>/dev/null \
+    | sed 's/^/[init_nemoclaw] gateway log: /' >&2 || true
+}
+
+check_vss_openclaw_gateway() {
+  if ! have nemoclaw; then
+    log "NemoClaw is not available; cannot verify OpenClaw dashboard URL"
     return 1
   fi
 
-  log "Restarting OpenClaw gateway in sandbox ${NEMOCLAW_SANDBOX_NAME}"
-  openshell sandbox exec -n "${NEMOCLAW_SANDBOX_NAME}" -- sh -lc \
-    "pkill -TERM -f '[o]penclaw-gateway' || true; pkill -TERM -f '[o]penclaw' || true" </dev/null || true
+  if nemoclaw "${NEMOCLAW_SANDBOX_NAME}" dashboard-url --quiet >/dev/null 2>&1; then
+    log "OpenClaw dashboard URL is available for sandbox ${NEMOCLAW_SANDBOX_NAME}"
+    return 0
+  fi
 
-  for attempt in $(seq 1 30); do
-    if openshell sandbox exec -n "${NEMOCLAW_SANDBOX_NAME}" -- sh -lc \
-        "curl -fsS http://127.0.0.1:${port}/health >/dev/null" </dev/null; then
-      log "OpenClaw gateway is healthy after restart"
-      return 0
-    fi
-    sleep 1
-  done
-
-  log "WARN: OpenClaw gateway did not become healthy within 30 seconds after restart"
+  log "ERROR: NemoClaw could not retrieve the OpenClaw dashboard URL for sandbox ${NEMOCLAW_SANDBOX_NAME}"
+  print_vss_gateway_log
   return 1
 }
 
@@ -455,13 +483,13 @@ configure_openclaw_otel_content_capture() {
     return 1
   fi
 
-  capture="$(json_bool "${OPENCLAW_OTEL_CAPTURE_CONTENT}")"
-  input_messages="$(json_bool "${OPENCLAW_OTEL_CAPTURE_INPUT_MESSAGES}")"
-  output_messages="$(json_bool "${OPENCLAW_OTEL_CAPTURE_OUTPUT_MESSAGES}")"
-  tool_inputs="$(json_bool "${OPENCLAW_OTEL_CAPTURE_TOOL_INPUTS}")"
-  tool_outputs="$(json_bool "${OPENCLAW_OTEL_CAPTURE_TOOL_OUTPUTS}")"
-  system_prompt="$(json_bool "${OPENCLAW_OTEL_CAPTURE_SYSTEM_PROMPT}")"
-  tool_definitions="$(json_bool "${OPENCLAW_OTEL_CAPTURE_TOOL_DEFINITIONS}")"
+  capture="$(python_bool "${OPENCLAW_OTEL_CAPTURE_CONTENT}")"
+  input_messages="$(python_bool "${OPENCLAW_OTEL_CAPTURE_INPUT_MESSAGES}")"
+  output_messages="$(python_bool "${OPENCLAW_OTEL_CAPTURE_OUTPUT_MESSAGES}")"
+  tool_inputs="$(python_bool "${OPENCLAW_OTEL_CAPTURE_TOOL_INPUTS}")"
+  tool_outputs="$(python_bool "${OPENCLAW_OTEL_CAPTURE_TOOL_OUTPUTS}")"
+  system_prompt="$(python_bool "${OPENCLAW_OTEL_CAPTURE_SYSTEM_PROMPT}")"
+  tool_definitions="$(python_bool "${OPENCLAW_OTEL_CAPTURE_TOOL_DEFINITIONS}")"
 
   printf -v update_cmd 'import json; p="%s"; cfg=json.load(open(p)); diag=cfg.setdefault("diagnostics",{}); diag["enabled"]=True; otel=diag.setdefault("otel",{}); otel["captureContent"]={"enabled":%s,"inputMessages":%s,"outputMessages":%s,"toolInputs":%s,"toolOutputs":%s,"systemPrompt":%s,"toolDefinitions":%s}; json.dump(cfg, open(p,"w"), indent=2)' \
     "${VSS_REMOTE_CONFIG_PATH}" \
@@ -479,7 +507,7 @@ configure_openclaw_otel_content_capture() {
     return 1
   fi
 
-  restart_vss_openclaw_gateway || return 1
+  check_vss_openclaw_gateway || return 1
   ensure_dashboard_forward || return 1
 }
 
@@ -529,7 +557,7 @@ install_vss_openclaw_plugin() {
   # Clean up the local tarball on every return path (success, upload failure, install failure).
   trap 'rm -f "${tgz_path}"; trap - RETURN' RETURN
 
-  # --dangerously-force-unsafe-install: the plugin's index.ts uses child_process (npx skills add agent-browser,
+  # --dangerously-force-unsafe-install: the plugin's index.js uses child_process (npx skills add agent-browser,
   # systemctl daemon-reload), which OpenClaw's install-time scanner flags. We trust this first-party plugin.
   # printf %q shell-escapes both interpolated values so a quote in tgz_name or
   # OPENCLAW_PLUGIN_VARIANT can't break out of the remote shell command.
@@ -567,7 +595,7 @@ install_vss_openclaw_plugin() {
   fi
 
   log "VSS OpenClaw plugin installed"
-  restart_vss_openclaw_gateway || return 1
+  check_vss_openclaw_gateway || return 1
   ensure_dashboard_forward || return 1
 }
 

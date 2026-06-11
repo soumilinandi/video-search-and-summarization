@@ -152,38 +152,44 @@ def chmod_and_chown(
         pass
 
 
-def get_dashboard_token(
+def get_dashboard_url(
     sandbox_name: str,
 ) -> str | None:
     try:
         result = subprocess.run(
-            ["nemoclaw", sandbox_name, "gateway-token", "--quiet"],
+            ["nemoclaw", sandbox_name, "dashboard-url", "--quiet"],
             check=True,
             text=True,
             capture_output=True,
             stdin=subprocess.DEVNULL,
         )
-        token = result.stdout.strip()
-        if token:
-            return token
-    except (FileNotFoundError, subprocess.CalledProcessError):
-        pass
+        url = result.stdout.strip()
+        if url:
+            return url
+    except FileNotFoundError:
+        return None
+    except subprocess.CalledProcessError as e:
+        detail = "\n".join(part for part in (e.stdout, e.stderr) if part).strip()
+        if detail:
+            print(detail, file=sys.stderr)
+        return None
 
+    return None
+
+
+def print_gateway_log(sandbox_name: str) -> None:
     try:
         result = sandbox_exec(
             sandbox_name,
-            ["sh", "-lc", "openclaw dashboard"],
+            ["sh", "-lc", "test -f /tmp/gateway.log && tail -n 120 /tmp/gateway.log || true"],
             capture_output=True,
         )
     except subprocess.CalledProcessError:
-        return None
-
-    output = "\n".join(part for part in (result.stdout, result.stderr) if part)
-    match = re.search(r"/#token=([0-9a-fA-F]+)", output)
-    if not match:
-        return None
-
-    return match.group(1)
+        return
+    output = "\n".join(part for part in (result.stdout, result.stderr) if part).strip()
+    if output:
+        print("Last /tmp/gateway.log lines:")
+        print(output)
 
 
 def highlight_message(message: str) -> str:
@@ -286,10 +292,10 @@ def main() -> int:
     args = parser.parse_args()
 
     env_id = get_brev_env_id()
+    port = os.environ.get("NEMOCLAW_DASHBOARD_PORT", "18789").strip() or "18789"
     if env_id:
-        origin = f"https://18789-{env_id}.brevlab.com"
+        origin = f"https://{port}-{env_id}.brevlab.com"
     else:
-        port = os.environ.get("NEMOCLAW_DASHBOARD_PORT", "18789").strip()
         origin = f"http://127.0.0.1:{port}"
 
     raw = read_remote_file(args.sandbox_name, args.config_path)
@@ -345,7 +351,7 @@ def main() -> int:
         print(f"No JSON change needed in {args.config_path}")
 
     chmod_and_chown(args.sandbox_name, args.config_path)
-    dashboard_token = get_dashboard_token(args.sandbox_name)
+    dashboard_url = get_dashboard_url(args.sandbox_name)
 
     if env_id:
         print(f"Brev instance ID: {env_id}")
@@ -355,15 +361,14 @@ def main() -> int:
         print(f"OpenClaw hooks enabled at: {args.hooks_path}")
     if args.mcp_url:
         print(f"MCP server registered: {args.mcp_name} -> {args.mcp_url}")
-    if not dashboard_token:
-        print("No dashboard token found")
+    if not dashboard_url:
+        print("No dashboard URL found")
+        print_gateway_log(args.sandbox_name)
         return 0
 
-    print(f"Dashboard token: {dashboard_token}")
-    ui_url = f"{origin}/#token={dashboard_token}"
     print()
     print(highlight_message("=" * 120))
-    print(highlight_message(f"OpenClaw UI at {ui_url}"))
+    print(highlight_message(f"OpenClaw UI at {dashboard_url}"))
     print(highlight_message("=" * 120))
     return 0
 
