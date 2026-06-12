@@ -5,9 +5,11 @@
 Before starting user work:
 
 1. Read `ENV.md` and export the variables shown there.
-2. Read `SOUL.md`.
-3. Read `TOOLS.md`.
-4. If `memory/YYYY-MM-DD.md` exists, read today's and yesterday's notes.
+2. Read `TOOLS.md`.
+3. If `memory/YYYY-MM-DD.md` exists, read today's and yesterday's notes.
+
+Hermes loads its persona from `/sandbox/.hermes/SOUL.md`; do not look for a
+project-local `SOUL.md`.
 
 ## VSS Rules
 

@@ -18,8 +18,8 @@ When you run `init_nemohermes.sh`, it:
 4. Configures `NGC_CLI_API_KEY` as a sandbox credential provider when present.
 5. Installs each VSS skill from the repository `skills/` directory using
    `nemohermes <sandbox> skill install`.
-6. Uploads Hermes workspace files to `/sandbox/.hermes-data/workspace` and
-   mirrors the `.md` context files to `/sandbox` for Hermes discovery.
+6. Uploads Hermes project context files to `/sandbox` and the Hermes persona
+   file to `/sandbox/.hermes/SOUL.md`.
 7. Installs `/sandbox/bin/vss-orchestrator`, a small command bridge for the
    host-side HTTP MCP endpoint.
 8. Registers the host-side VSS Orchestrator MCP server in

@@ -1,6 +1,6 @@
 # BOOTSTRAP.md - First NemoHermes VSS Run
 
-1. Read `ENV.md`, `SOUL.md`, and `TOOLS.md`.
+1. Read `ENV.md` and `TOOLS.md`.
 2. Export the variables from `ENV.md`.
 3. Check the host orchestrator:
 
