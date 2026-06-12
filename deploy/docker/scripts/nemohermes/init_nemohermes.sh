@@ -7,7 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 VSS_REPO_DIR="${VSS_REPO_DIR:-$(cd "${SCRIPT_DIR}/../../../.." && pwd)}"
 NEMOCLAW_REPO_DIR="${NEMOCLAW_REPO_DIR:-${HOME}/NemoClaw}"
-NEMOCLAW_SANDBOX_NAME="${NEMOCLAW_SANDBOX_NAME:-vss-hermes}"
+NEMOCLAW_SANDBOX_NAME="${NEMOCLAW_SANDBOX_NAME:-demo}"
 NEMOCLAW_AGENT="${NEMOCLAW_AGENT:-hermes}"
 NEMOCLAW_PROVIDER="${NEMOCLAW_PROVIDER:-}"
 NEMOCLAW_ENDPOINT_URL="${NEMOCLAW_ENDPOINT_URL:-}"
@@ -23,6 +23,7 @@ NEMOCLAW_POLICY_FILE="${NEMOCLAW_POLICY_FILE:-${VSS_REPO_DIR}/assets/vss_nemocla
 NEMOHERMES_WORKSPACE_DIR="${NEMOHERMES_WORKSPACE_DIR:-${VSS_REPO_DIR}/.hermes/workspace}"
 NEMOHERMES_ORCHESTRATOR_WRAPPER_PATH="${NEMOHERMES_ORCHESTRATOR_WRAPPER_PATH:-${SCRIPT_DIR}/vss_orchestrator_wrapper.py}"
 NEMOHERMES_REMOTE_WORKSPACE="${NEMOHERMES_REMOTE_WORKSPACE:-/sandbox/.hermes-data/workspace}"
+NEMOHERMES_REMOTE_CONTEXT_DIR="${NEMOHERMES_REMOTE_CONTEXT_DIR:-/sandbox}"
 NEMOHERMES_API_PORT="${NEMOHERMES_API_PORT:-8642}"
 NEMOHERMES_MCP_SERVER_NAME="${NEMOHERMES_MCP_SERVER_NAME:-vss_orchestrator}"
 NEMOHERMES_MCP_URL="${NEMOHERMES_MCP_URL:-http://host.openshell.internal:9988/mcp}"
@@ -56,7 +57,7 @@ Usage:
 
 Options:
   --nvidia-api-key KEY        NVIDIA API key (required when NEMOCLAW_PROVIDER=build)
-  --sandbox-name NAME         Sandbox name (default: vss-hermes)
+  --sandbox-name NAME         Sandbox name (default: demo)
   --model NAME                NemoClaw/Hermes inference model
   --nvidia-base-url URL       NVIDIA API base URL (default: https://integrate.api.nvidia.com/v1)
   --endpoint-url URL          OpenAI-compatible endpoint URL (required when NEMOCLAW_PROVIDER=custom)
@@ -499,7 +500,7 @@ install_vss_skills() {
 }
 
 upload_workspace_templates() {
-  local local_file remote_file shell_cmd
+  local local_file remote_file context_file shell_cmd
 
   if [ ! -d "$NEMOHERMES_WORKSPACE_DIR" ]; then
     log "Workspace template directory ${NEMOHERMES_WORKSPACE_DIR} is missing; skipping"
@@ -513,14 +514,22 @@ upload_workspace_templates() {
 
   log "Uploading Hermes workspace templates from ${NEMOHERMES_WORKSPACE_DIR}"
   openshell sandbox exec -n "$NEMOCLAW_SANDBOX_NAME" -- sh -lc \
-    "mkdir -p '$NEMOHERMES_REMOTE_WORKSPACE/memory'" </dev/null
+    "mkdir -p '$NEMOHERMES_REMOTE_WORKSPACE/memory' '$NEMOHERMES_REMOTE_CONTEXT_DIR'" </dev/null
 
   for local_file in "$NEMOHERMES_WORKSPACE_DIR"/*.md; do
     [ -f "$local_file" ] || continue
+
     remote_file="${NEMOHERMES_REMOTE_WORKSPACE}/$(basename "$local_file")"
     printf -v shell_cmd 'cat > %q' "$remote_file"
     if ! openshell sandbox exec -n "$NEMOCLAW_SANDBOX_NAME" -- sh -c "$shell_cmd" < "$local_file"; then
       log "ERROR: failed to upload $(basename "$local_file")"
+      return 1
+    fi
+
+    context_file="${NEMOHERMES_REMOTE_CONTEXT_DIR}/$(basename "$local_file")"
+    printf -v shell_cmd 'cat > %q' "$context_file"
+    if ! openshell sandbox exec -n "$NEMOCLAW_SANDBOX_NAME" -- sh -c "$shell_cmd" < "$local_file"; then
+      log "ERROR: failed to mirror $(basename "$local_file") to ${NEMOHERMES_REMOTE_CONTEXT_DIR}"
       return 1
     fi
   done
@@ -679,7 +688,8 @@ validate_settings
 export NEMOCLAW_SANDBOX_NAME NEMOCLAW_AGENT NEMOCLAW_PROVIDER OPENSHELL_PROVIDER_NAME NEMOCLAW_MODEL
 export NEMOCLAW_NON_INTERACTIVE NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE
 export NEMOCLAW_ENDPOINT_URL COMPATIBLE_API_KEY NEMOCLAW_REPO_DIR NEMOCLAW_POLICY_FILE
-export NEMOHERMES_WORKSPACE_DIR NEMOHERMES_ORCHESTRATOR_WRAPPER_PATH NEMOHERMES_REMOTE_WORKSPACE NEMOHERMES_API_PORT
+export NEMOHERMES_WORKSPACE_DIR NEMOHERMES_ORCHESTRATOR_WRAPPER_PATH NEMOHERMES_REMOTE_WORKSPACE
+export NEMOHERMES_REMOTE_CONTEXT_DIR NEMOHERMES_API_PORT
 export NEMOHERMES_MCP_SERVER_NAME NEMOHERMES_MCP_URL
 export NEMOCLAW_HERMES_DASHBOARD NEMOCLAW_HERMES_DASHBOARD_PORT
 

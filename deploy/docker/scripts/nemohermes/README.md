@@ -18,7 +18,8 @@ When you run `init_nemohermes.sh`, it:
 4. Configures `NGC_CLI_API_KEY` as a sandbox credential provider when present.
 5. Installs each VSS skill from the repository `skills/` directory using
    `nemohermes <sandbox> skill install`.
-6. Uploads Hermes workspace files to `/sandbox/.hermes-data/workspace`.
+6. Uploads Hermes workspace files to `/sandbox/.hermes-data/workspace` and
+   mirrors the `.md` context files to `/sandbox` for Hermes discovery.
 7. Installs `/sandbox/bin/vss-orchestrator`, a small command bridge for the
    host-side HTTP MCP endpoint.
 8. Registers the host-side VSS Orchestrator MCP server in
@@ -49,7 +50,7 @@ not require a custom Hermes runtime plugin for the current skill workflow.
 ```bash
 NEMOCLAW_PROVIDER=build \
 NVIDIA_API_KEY="$NVIDIA_API_KEY" \
-  bash deploy/docker/scripts/nemohermes/init_nemohermes.sh vss-hermes
+  bash deploy/docker/scripts/nemohermes/init_nemohermes.sh demo
 ```
 
 ### OpenAI-Compatible Endpoint
@@ -59,14 +60,14 @@ NEMOCLAW_PROVIDER=custom \
 NEMOCLAW_ENDPOINT_URL=http://host.docker.internal:8000/v1 \
 NEMOCLAW_MODEL=Qwen/Qwen3.6-35B-A3B-FP8 \
 COMPATIBLE_API_KEY=nemoclaw-local-qwen \
-  bash deploy/docker/scripts/nemohermes/init_nemohermes.sh vss-hermes
+  bash deploy/docker/scripts/nemohermes/init_nemohermes.sh demo
 ```
 
 ## Options
 
 | Option | Description | Default |
 |---|---|---|
-| `--sandbox-name NAME` | Target sandbox name | `vss-hermes` |
+| `--sandbox-name NAME` | Target sandbox name | `demo` |
 | `--model NAME` | Hermes inference model | `nvidia/nemotron-3-super-120b-a12b` |
 | `--nvidia-base-url URL` | NVIDIA API base URL | `https://integrate.api.nvidia.com/v1` |
 | `--nvidia-api-key KEY` | API key for the `build` provider | `NVIDIA_API_KEY` |
@@ -78,7 +79,7 @@ COMPATIBLE_API_KEY=nemoclaw-local-qwen \
 ## Environment Variables
 
 - `VSS_REPO_DIR`: repo root used to resolve skills and policy file
-- `NEMOCLAW_SANDBOX_NAME`: target sandbox name, default `vss-hermes`
+- `NEMOCLAW_SANDBOX_NAME`: target sandbox name, default `demo`
 - `NEMOCLAW_PROVIDER`: required, `build` or `custom`
 - `NEMOCLAW_ENDPOINT_URL`: required when `NEMOCLAW_PROVIDER=custom`
 - `COMPATIBLE_API_KEY`: required when `NEMOCLAW_PROVIDER=custom`
@@ -135,7 +136,7 @@ operations outside the sandbox.
 After setup:
 
 ```bash
-nemohermes vss-hermes connect
+nemohermes demo connect
 ```
 
 The Hermes API is expected at:
@@ -150,7 +151,7 @@ The Hermes web dashboard is disabled by default. To enable it during setup:
 NEMOCLAW_HERMES_DASHBOARD=1 \
 NEMOCLAW_PROVIDER=build \
 NVIDIA_API_KEY="$NVIDIA_API_KEY" \
-  bash deploy/docker/scripts/nemohermes/init_nemohermes.sh vss-hermes
+  bash deploy/docker/scripts/nemohermes/init_nemohermes.sh demo
 ```
 
 When enabled, the dashboard is expected at:
