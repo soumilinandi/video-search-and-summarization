@@ -35,6 +35,8 @@ connected, reconnect the session.
 Use the orchestrator for host Docker work. Do not run `docker compose`,
 `deploy/docker/scripts/dev-profile.sh`, `nvidia-smi`, Docker prerequisite
 shell probes, or raw host deployment commands from inside this sandbox.
+If a prerequisite check would require `sudo`, skip that path and call the
+orchestrator instead.
 
 Use the Hermes MCP tools from the `vss_orchestrator` server when available.
 The exact displayed tool names may be prefixed by Hermes. Match by the
@@ -80,6 +82,15 @@ Check whether the sandbox can reach the host orchestrator:
 ```bash
 /sandbox/bin/vss-orchestrator health
 ```
+
+Run host prerequisite checks through the orchestrator:
+
+```bash
+/sandbox/bin/vss-orchestrator prereqs
+```
+
+Do not replace this with `sudo`, `docker ps`, `nvidia-smi`, `ngc --version`,
+`sysctl`, or package-manager probes from inside the sandbox.
 
 ## Deployment Tool Chains
 

@@ -26,6 +26,16 @@ Hermes MCP tools or `/sandbox/bin/vss-orchestrator`. Do not satisfy these
 requests by only reading a skill and running local shell checks in the sandbox.
 Skills are reference material; the orchestrator is the execution path.
 
+For prerequisite checks, the first command must be:
+
+```bash
+/sandbox/bin/vss-orchestrator prereqs
+```
+
+Do not ask for sudo and do not run sandbox-local prerequisite probes such as
+`sudo -n true`, `docker ps`, `nvidia-smi`, `ngc --version`, `sysctl`, or
+package-manager checks. Those checks belong to the host-side orchestrator.
+
 Do not run raw host deployment commands from the sandbox. Use orchestrator tools
 for:
 
