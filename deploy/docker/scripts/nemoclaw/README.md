@@ -198,6 +198,8 @@ If the config update succeeds, the helper also prints:
 
 - Verify `NEMOCLAW_PROVIDER` is set (`build` or `custom`) — the script exits immediately if it is unset.
 - For `NEMOCLAW_PROVIDER=custom`, verify both `NEMOCLAW_ENDPOINT_URL` and `COMPATIBLE_API_KEY` are set (or pass `--endpoint-url` / `--compatible-api-key`).
+- If `openshell inference set` cannot verify an otherwise reachable endpoint,
+  the script retries automatically with `--no-verify`.
 - Verify `NVIDIA_API_KEY` is set before running the installer.
 - If NemoClaw onboarding fails, verify `nemoclaw` is resolvable or that `/home/ubuntu/NemoClaw/install.sh` exists and is executable.
 - If the custom policy is skipped, confirm `assets/vss_nemoclaw_policy.yaml` exists or pass `--policy-file`.

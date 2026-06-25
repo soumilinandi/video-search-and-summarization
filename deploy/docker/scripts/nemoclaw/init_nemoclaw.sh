@@ -212,7 +212,12 @@ configure_openshell_provider() {
     log "Provider ${action} failed; continuing with existing provider config"
   fi
 
-  openshell inference set --provider "$OPENSHELL_PROVIDER_NAME" --model "$NEMOCLAW_MODEL" --timeout 300
+  local inference_args
+  inference_args=(inference set --provider "$OPENSHELL_PROVIDER_NAME" --model "$NEMOCLAW_MODEL" --timeout 300)
+  if ! openshell "${inference_args[@]}"; then
+    log "OpenShell inference endpoint verification failed; retrying with --no-verify"
+    openshell "${inference_args[@]}" --no-verify
+  fi
   openshell inference get || true
 }
 
@@ -651,7 +656,7 @@ install_vss_openclaw_plugin() {
   # Clean up the local tarball on every return path (success, upload failure, install failure).
   trap 'rm -f "${tgz_path}"; trap - RETURN' RETURN
 
-  # --dangerously-force-unsafe-install: the plugin's index.ts uses child_process (npx skills add agent-browser,
+  # --dangerously-force-unsafe-install: the plugin extension uses child_process (npx skills add agent-browser,
   # systemctl daemon-reload), which OpenClaw's install-time scanner flags. We trust this first-party plugin.
   # printf %q shell-escapes both interpolated values so a quote in tgz_name or
   # OPENCLAW_PLUGIN_VARIANT can't break out of the remote shell command.
