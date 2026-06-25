@@ -1,6 +1,6 @@
-# ENV.md - NemoHermes VSS Sandbox Environment
+# ENV.md - NemoClaw Hermes VSS Sandbox Environment
 
-Set these at the start of each shell session inside the NemoHermes sandbox.
+Set these at the start of each shell session inside the Hermes sandbox.
 
 ```bash
 export HOST_IP=host.openshell.internal

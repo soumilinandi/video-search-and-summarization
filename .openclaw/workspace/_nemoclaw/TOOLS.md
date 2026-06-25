@@ -93,55 +93,40 @@ inside the sandbox.
 
 ## Calling MCP tools
 
-Openclaw's built-in MCP client can't fully handshake with the orchestrator's
-`nat mcp serve` (protocol mismatch: openclaw opens the SSE GET before
-establishing a session). Only **`vss_orchestrator__docker_list`** reliably
-registers as a native tool. Prefer it natively when present. Every other
-orchestrator tool (`prereqs`, `docker_generate`, `docker_up`, `docker_down`,
-`docker_status`, `docker_logs`, `docker_read`, `profiles`) must be invoked
-via `curl` from the `exec` tool. Ignore `react_agent` — it's the workflow's
-entry function, not a deployment tool.
+The VSS setup registers the orchestrator through OpenClaw's native MCP
+client registry under `/sandbox/.openclaw/openclaw.json`:
 
-### Handshake (once per session)
-
-Always use heredocs from the `exec` tool — never hand-write inline JSON.
-Responses are SSE-framed (`event: message\n\ndata: {...}\n\n`); strip the
-`data: ` prefix before parsing. The handshake is **three** messages:
-`initialize`, then `notifications/initialized` (no `id`, no response body),
-then your `tools/call` requests. Skipping the notification triggers
-"Received request before initialization was complete" on the server. Do
-**not** call `tools/list` — the tool names below are stable and the schema
-blob costs ~5 KB of context per session.
-
-```bash
-# 1. initialize, capture the session id
-SID=$(curl -sN -D /tmp/h.txt -X POST http://host.openshell.internal:9988/mcp \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json, text/event-stream' \
-  --data @- <<'EOF' >/dev/null
-{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"vss-assistant","version":"0.1.0"}}}
-EOF
-  grep -i '^mcp-session-id:' /tmp/h.txt | awk '{print $2}' | tr -d '\r')
-
-# 2. send initialized notification (no id; expect HTTP 202, empty body)
-curl -s -X POST http://host.openshell.internal:9988/mcp \
-  -H "Mcp-Session-Id: $SID" \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json, text/event-stream' \
-  --data '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+```json
+{
+  "mcp": {
+    "servers": {
+      "vss_orchestrator": {
+        "url": "http://host.openshell.internal:9988/mcp",
+        "transport": "streamable-http",
+        "connectTimeout": 10,
+        "timeout": 120
+      }
+    }
+  }
+}
 ```
 
-### Calling a tool
+Use the native OpenClaw MCP tools, normally named
+`vss_orchestrator__<tool>`. Do not hand-roll JSON-RPC calls for normal deploy
+work. If tools are missing, first verify the saved registry entry:
 
 ```bash
-curl -s -X POST http://host.openshell.internal:9988/mcp \
-  -H "Mcp-Session-Id: $SID" \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json, text/event-stream' \
-  --data @- <<'EOF'
-{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"vss_orchestrator__<tool>","arguments":{...}}}
-EOF
+openclaw mcp status --verbose
+openclaw mcp probe vss_orchestrator --json
 ```
+
+If the probe succeeds but tools still do not appear in the active chat, run
+`openclaw mcp reload` or restart/reconnect the OpenClaw session. If the probe
+fails, tell the user to make sure the host VSS Orchestrator MCP server is
+running from the notebook before trying deployment.
+
+Ignore `react_agent` if it appears in discovery output — it is the
+orchestrator workflow entry function, not a deployment tool.
 
 ## Mapping user intent to tool chains
 

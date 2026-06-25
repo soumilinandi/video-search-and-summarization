@@ -212,13 +212,18 @@ def update_hooks_config(
 
 
 def update_mcp_server(data: dict, *, name: str, url: str) -> bool:
-    """Register an HTTP MCP server under data['mcp']['servers'][name].
+    """Register a Streamable HTTP MCP server under data['mcp']['servers'][name].
 
     Returns True if the config changed. No-ops when name or url is empty.
     """
     if not name or not url:
         return False
-    server_config = {"type": "http", "url": url}
+    server_config = {
+        "url": url,
+        "transport": "streamable-http",
+        "connectTimeout": 10,
+        "timeout": 120,
+    }
     mcp = data.setdefault("mcp", {})
     servers = mcp.setdefault("servers", {})
     if servers.get(name) == server_config:
@@ -279,7 +284,7 @@ def main() -> int:
             "VSS_ORCHESTRATOR_MCP_URL", "http://host.openshell.internal:9988/mcp"
         ).strip(),
         help=(
-            "HTTP MCP server URL to register; pass empty string to skip "
+            "Streamable HTTP MCP server URL to register; pass empty string to skip "
             "(default: http://host.openshell.internal:9988/mcp)"
         ),
     )

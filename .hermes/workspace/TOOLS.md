@@ -1,4 +1,4 @@
-# TOOLS.md - NemoHermes VSS Tools
+# TOOLS.md - NemoClaw Hermes VSS Tools
 
 ## Sandbox Host Alias
 
@@ -21,7 +21,7 @@ server:
 http://host.openshell.internal:9988/mcp
 ```
 
-The NemoHermes installer registers this endpoint in `/sandbox/.hermes/config.yaml`:
+The NemoClaw Hermes setup registers this endpoint in `/sandbox/.hermes/config.yaml`:
 
 ```yaml
 mcp_servers:
@@ -38,56 +38,26 @@ shell probes, or raw host deployment commands from inside this sandbox.
 If a prerequisite check would require `sudo`, skip that path and call the
 orchestrator instead.
 
-Use the Hermes MCP tools from the `vss_orchestrator` server when available.
-The exact displayed tool names may be prefixed by Hermes. Match by the
-underlying VSS Orchestrator operation: `profiles`, `prereqs`,
-`docker_generate`, `docker_read`, `docker_up`, `docker_status`, `docker_list`,
-`docker_logs`, and `docker_down`.
-
-If MCP tools are not registered, verify the HTTP endpoint below and reconnect
-or use the installed command bridge before deploying from the sandbox.
+Use the Hermes MCP tools from the `vss_orchestrator` server. The exact
+displayed tool names may be prefixed by Hermes. Match by the underlying VSS
+Orchestrator operation: `profiles`, `prereqs`, `docker_generate`,
+`docker_read`, `docker_up`, `docker_status`, `docker_list`, `docker_logs`, and
+`docker_down`.
 
 Do not replace orchestrator calls with skill-only reasoning. The VSS skills
 describe how deployment works, but the host checks and deploy operations must
-go through `vss_orchestrator` MCP tools or `/sandbox/bin/vss-orchestrator`.
-
-## Orchestrator Command Bridge
-
-The NemoHermes installer uploads:
-
-```bash
-/sandbox/bin/vss-orchestrator
-```
-
-Use it when Hermes MCP tools are not listed. It calls the same HTTP MCP endpoint
-and maps the first argument to `vss_orchestrator__<tool>`.
-
-```bash
-/sandbox/bin/vss-orchestrator health
-/sandbox/bin/vss-orchestrator list
-/sandbox/bin/vss-orchestrator profiles
-/sandbox/bin/vss-orchestrator prereqs
-/sandbox/bin/vss-orchestrator docker_generate '{"profile":"base"}'
-/sandbox/bin/vss-orchestrator docker_up '{"docker_compose_id":"..."}'
-/sandbox/bin/vss-orchestrator docker_status '{"docker_compose_id":"..."}'
-```
-
-Pass tool arguments as one JSON object, or use `-` to read the JSON object from
-stdin.
+go through `vss_orchestrator` MCP tools.
 
 ## MCP Reachability
 
 Check whether the sandbox can reach the host orchestrator:
 
 ```bash
-/sandbox/bin/vss-orchestrator health
+curl -i --max-time 5 -H 'Accept: application/json, text/event-stream' http://host.openshell.internal:9988/mcp
 ```
 
-Run host prerequisite checks through the orchestrator:
-
-```bash
-/sandbox/bin/vss-orchestrator prereqs
-```
+A non-2xx MCP protocol response still proves the endpoint is reachable. Use the
+native `vss_orchestrator` MCP tools for actual operations.
 
 Do not replace this with `sudo`, `docker ps`, `nvidia-smi`, `ngc --version`,
 `sysctl`, or package-manager probes from inside the sandbox.
@@ -98,12 +68,12 @@ Map user intent to the smallest safe chain:
 
 | User asks | Tool chain |
 |---|---|
-| list profiles | `profiles` or `/sandbox/bin/vss-orchestrator profiles` |
-| check prerequisites | `prereqs` or `/sandbox/bin/vss-orchestrator prereqs` |
-| generate artifacts | `docker_generate` or `/sandbox/bin/vss-orchestrator docker_generate '<json>'` |
+| list profiles | `profiles` |
+| check prerequisites | `prereqs` |
+| generate artifacts | `docker_generate` |
 | deploy a profile | `prereqs` -> `docker_generate` -> `docker_up` -> poll `docker_status` |
-| inspect running services | `docker_list` or `/sandbox/bin/vss-orchestrator docker_list` |
-| read logs | `docker_logs` or `/sandbox/bin/vss-orchestrator docker_logs '<json>'` |
+| inspect running services | `docker_list` |
+| read logs | `docker_logs` |
 | tear down | `docker_down` -> poll `docker_status` |
 
 For long deploys, report one short progress update after each poll. Poll at the

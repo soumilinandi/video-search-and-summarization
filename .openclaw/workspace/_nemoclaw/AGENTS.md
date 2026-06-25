@@ -121,9 +121,9 @@ Skills provide your tools. When you need one, check its `SKILL.md`. Keep local n
 
 ### VSS Deploy Conventions
 
-> **Deployment is handled by the VSS Orchestrator MCP server at `http://host.openshell.internal:9988/mcp`. Do NOT run `dev-profile.sh`, raw `docker compose`, or any host shell command for deploy/teardown — call MCP tools using the recipe in TOOLS.md. The MCP server inherits `NGC_CLI_API_KEY` and `HARDWARE_PROFILE` from the host; do not prompt the user for them.**
+> **Deployment is handled by the VSS Orchestrator MCP server at `http://host.openshell.internal:9988/mcp`. Do NOT run `dev-profile.sh`, raw `docker compose`, or any host shell command for deploy/teardown — use the native OpenClaw MCP tools registered as `vss_orchestrator__*`. The MCP server inherits `NGC_CLI_API_KEY` and `HARDWARE_PROFILE` from the host; do not prompt the user for them.**
 
-> The tool names below (`vss_orchestrator__*`) are listed for orientation, but **always confirm them against `tools/list` output** (per TOOLS.md) before invoking — use whatever names discovery returns.
+> If the `vss_orchestrator__*` tools are missing, follow `TOOLS.md`: check `openclaw mcp status --verbose`, probe `vss_orchestrator`, then reload/reconnect OpenClaw if the probe succeeds.
 
 - When the user says **"deploy VSS base"**, **"deploy VSS search"**, **"deploy VSS lvs"**, or **"deploy VSS alerts"**:
   1. Call `vss_orchestrator__prereqs` — abort if it fails; tell the user to run the matching cell in `deploy/docker/scripts/deploy_nemoclaw_vss.ipynb` (the notebook lives on the host, not in the sandbox — do not try to read, list, find, or open it from inside the sandbox; just tell the user).

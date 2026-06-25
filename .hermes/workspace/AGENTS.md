@@ -1,4 +1,4 @@
-# AGENTS.md - VSS NemoHermes Workspace
+# AGENTS.md - VSS NemoClaw Hermes Workspace
 
 ## Every Session
 
@@ -15,24 +15,16 @@ project-local `SOUL.md`.
 
 This is a NemoClaw/OpenShell sandbox running Hermes. Host Docker and VSS
 deployment operations go through the VSS Orchestrator MCP server on the host.
-Prefer the Hermes MCP tools from `vss_orchestrator` when they are available.
-If those tools are not listed, use the installed command bridge instead:
-
-```bash
-/sandbox/bin/vss-orchestrator <tool> '<json arguments>'
-```
+Use the Hermes MCP tools from `vss_orchestrator`.
 
 When the user asks for the VSS orchestrator, deployment profiles,
 prerequisites, compose generation, deploy, status, logs, or teardown, use the
-Hermes MCP tools or `/sandbox/bin/vss-orchestrator`. Do not satisfy these
-requests by only reading a skill and running local shell checks in the sandbox.
-Skills are reference material; the orchestrator is the execution path.
+Hermes MCP tools. Do not satisfy these requests by only reading a skill and
+running local shell checks in the sandbox. Skills are reference material; the
+orchestrator is the execution path.
 
-For prerequisite checks, the first command must be:
-
-```bash
-/sandbox/bin/vss-orchestrator prereqs
-```
+For prerequisite checks, call the `prereqs` operation from the
+`vss_orchestrator` MCP server.
 
 Do not ask for sudo and do not run sandbox-local prerequisite probes such as
 `sudo -n true`, `docker ps`, `nvidia-smi`, `ngc --version`, `sysctl`, or
@@ -49,6 +41,11 @@ for:
 - teardown
 
 For read-only VSS service calls, use `${HOST_IP}` from `ENV.md`.
+
+If the `vss_orchestrator` MCP tools are not available, tell the user to start
+the host MCP server and reconnect Hermes. If they are still unavailable, the
+Hermes sandbox likely was not built with the Python `mcp` package; ask the user
+to rerun setup on a fresh/rebuilt sandbox with MCP baked into the Hermes image.
 
 ## Progress
 
