@@ -34,6 +34,8 @@ NEMOCLAW_POLICY_FILE="${NEMOCLAW_POLICY_FILE:-${VSS_REPO_DIR}/assets/vss_nemocla
 OPENCLAW_PLUGIN_DIR="${OPENCLAW_PLUGIN_DIR:-${VSS_REPO_DIR}/.openclaw}"
 VSS_NAMESPACE="${VSS_NAMESPACE:-openshell}"
 VSS_REMOTE_CONFIG_PATH="/sandbox/.openclaw/openclaw.json"
+NEMOCLAW_DASHBOARD_PORT="${NEMOCLAW_DASHBOARD_PORT:-18789}"
+NEMOCLAW_DASHBOARD_BIND_ADDRESS="${NEMOCLAW_DASHBOARD_BIND_ADDRESS:-0.0.0.0}"
 HERMES_WORKSPACE_DIR="${HERMES_WORKSPACE_DIR:-${VSS_REPO_DIR}/.hermes/workspace}"
 HERMES_REMOTE_CONTEXT_DIR="${HERMES_REMOTE_CONTEXT_DIR:-/sandbox}"
 HERMES_REMOTE_HOME="${HERMES_REMOTE_HOME:-/sandbox/.hermes}"
@@ -174,6 +176,7 @@ export_nemoclaw_provider_env() {
   if [ "${NEMOCLAW_PROVIDER}" = "custom" ]; then
     export NEMOCLAW_ENDPOINT_URL
     export COMPATIBLE_API_KEY
+    export OPENAI_API_KEY="${OPENAI_API_KEY:-$COMPATIBLE_API_KEY}"
   fi
 }
 
@@ -343,6 +346,9 @@ Environment (non-interactive Nemoclaw / OpenShell):
   OPENSHELL_PROVIDER_NAME     Name for openshell OpenAI-compatible provider (default: nvidia)
   OPENCLAW_PLUGIN_DIR         Path to the OpenClaw plugin source to pack and install
                               (default: <VSS_REPO_DIR>/.openclaw)
+  NEMOCLAW_DASHBOARD_PORT     OpenClaw dashboard forward port (default: 18789)
+  NEMOCLAW_DASHBOARD_BIND_ADDRESS
+                              OpenClaw dashboard forward bind address (default: 0.0.0.0)
   HERMES_WORKSPACE_DIR        Path to Hermes workspace/context files (default: <VSS_REPO_DIR>/.hermes/workspace)
   HERMES_MCP_URL              VSS Orchestrator MCP URL from the sandbox
                               (default: http://host.openshell.internal:9988/mcp)
@@ -480,6 +486,16 @@ validate_runtime_settings() {
 forward_running_for_sandbox() {
   local port="$1"
   local sandbox_name="$2"
+  local bind_address="${NEMOCLAW_DASHBOARD_BIND_ADDRESS:-0.0.0.0}"
+  openshell forward list 2>/dev/null \
+    | strip_ansi \
+    | awk -v name="$sandbox_name" -v bind="$bind_address" -v port="$port" \
+        '$1 == name && $2 == bind && $3 == port && tolower($NF) == "running" { found = 1 } END { exit found ? 0 : 1 }'
+}
+
+forward_running_for_sandbox_any_bind() {
+  local port="$1"
+  local sandbox_name="$2"
   openshell forward list 2>/dev/null \
     | strip_ansi \
     | awk -v name="$sandbox_name" -v port="$port" \
@@ -489,10 +505,11 @@ forward_running_for_sandbox() {
 forward_process_running_for_sandbox() {
   local port="$1"
   local sandbox_name="$2"
+  local bind_address="${NEMOCLAW_DASHBOARD_BIND_ADDRESS:-0.0.0.0}"
   local args
   while IFS= read -r args; do
     case "$args" in
-      *"openshell forward start ${port} ${sandbox_name}"*|*"openshell forward start --background ${port} ${sandbox_name}"*)
+      *"openshell forward start ${bind_address}:${port} ${sandbox_name}"*|*"openshell forward start --background ${bind_address}:${port} ${sandbox_name}"*)
         return 0
         ;;
     esac
@@ -513,40 +530,45 @@ dashboard_forward_healthy() {
 }
 
 ensure_dashboard_forward() {
-  local port="${NEMOCLAW_DASHBOARD_PORT:-18789}"
+  local port="${NEMOCLAW_DASHBOARD_PORT}"
+  local bind_address="${NEMOCLAW_DASHBOARD_BIND_ADDRESS}"
+  local forward_port="${bind_address}:${port}"
   local forward_log="/tmp/nemoclaw-forward-${port}.log"
   if ! have openshell; then
     log "ERROR: OpenShell not available; cannot refresh dashboard port-forward"
     return 1
   fi
-  log "Refreshing dashboard port-forward on ${port} for sandbox ${NEMOCLAW_SANDBOX_NAME}"
+  log "Refreshing dashboard port-forward on ${forward_port} for sandbox ${NEMOCLAW_SANDBOX_NAME}"
   if dashboard_forward_healthy "$port"; then
     sleep 2
     if dashboard_forward_healthy "$port" && forward_owned_by_sandbox "$port" "$NEMOCLAW_SANDBOX_NAME"; then
-      log "Dashboard port-forward on ${port} is already healthy; keeping existing listener"
+      log "Dashboard port-forward on ${forward_port} is already healthy; keeping existing listener"
       return
+    fi
+    if forward_running_for_sandbox_any_bind "$port" "$NEMOCLAW_SANDBOX_NAME"; then
+      log "Dashboard forward is healthy but not bound to ${bind_address}; restarting scoped OpenShell forward"
     fi
     log "Existing listener on ${port} is not the expected forward for sandbox ${NEMOCLAW_SANDBOX_NAME}; restarting scoped OpenShell forward"
   fi
 
   openshell forward stop "$port" "$NEMOCLAW_SANDBOX_NAME" >/dev/null 2>&1 || true
-  pkill -TERM -f "[o]penshell forward start ${port} ${NEMOCLAW_SANDBOX_NAME}" >/dev/null 2>&1 || true
+  pkill -TERM -f "[o]penshell forward start .*${port} ${NEMOCLAW_SANDBOX_NAME}" >/dev/null 2>&1 || true
 
   if have setsid; then
-    setsid -f openshell forward start "$port" "$NEMOCLAW_SANDBOX_NAME" </dev/null >"$forward_log" 2>&1 || true
+    setsid -f openshell forward start "$forward_port" "$NEMOCLAW_SANDBOX_NAME" </dev/null >"$forward_log" 2>&1 || true
   else
-    openshell forward start --background "$port" "$NEMOCLAW_SANDBOX_NAME" </dev/null >"$forward_log" 2>&1 || true
+    openshell forward start --background "$forward_port" "$NEMOCLAW_SANDBOX_NAME" </dev/null >"$forward_log" 2>&1 || true
   fi
 
   for _attempt in $(seq 1 30); do
     if forward_owned_by_sandbox "$port" "$NEMOCLAW_SANDBOX_NAME" && dashboard_forward_healthy "$port"; then
-      log "Dashboard port-forward on ${port} is healthy for sandbox ${NEMOCLAW_SANDBOX_NAME}"
+      log "Dashboard port-forward on ${forward_port} is healthy for sandbox ${NEMOCLAW_SANDBOX_NAME}"
       return
     fi
     sleep 1
   done
 
-  log "ERROR: could not (re)start dashboard forward on ${port}; the OpenClaw UI and /hooks endpoint are unreachable at http://127.0.0.1:${port}"
+  log "ERROR: could not (re)start dashboard forward on ${forward_port}; the OpenClaw UI and /hooks endpoint are unreachable at http://127.0.0.1:${port}"
   if [ -f "$forward_log" ]; then
     tail -n 20 "$forward_log" | sed 's/^/[init_nemoclaw] forward log: /' >&2 || true
   fi
@@ -801,12 +823,9 @@ verify_hermes_mcp_support() {
   fi
 
   log "Verifying Hermes Python MCP support in sandbox ${NEMOCLAW_SANDBOX_NAME}"
-  if ! openshell sandbox exec -n "$NEMOCLAW_SANDBOX_NAME" -- sh -lc '
-    /opt/hermes/.venv/bin/python - <<'"'"'PY'"'"'
-import importlib.util
-raise SystemExit(0 if importlib.util.find_spec("mcp") else 1)
-PY
-  ' </dev/null; then
+  if ! openshell sandbox exec -n "$NEMOCLAW_SANDBOX_NAME" -- \
+    /opt/hermes/.venv/bin/python -c 'import importlib.util; raise SystemExit(0 if importlib.util.find_spec("mcp") else 1)' \
+    </dev/null; then
     log "ERROR: Hermes Python package 'mcp' is not installed in /opt/hermes/.venv."
     log "Recreate or rebuild the Hermes sandbox with HERMES_BAKE_MCP=1, or provide HERMES_FROM_DOCKERFILE that installs mcp."
     return 1
@@ -1107,6 +1126,7 @@ export NEMOCLAW_SANDBOX_NAME NEMOCLAW_AGENT_RUNTIME NEMOCLAW_AGENT NEMOCLAW_PROV
 export NEMOCLAW_NON_INTERACTIVE NEMOCLAW_ACCEPT_THIRD_PARTY_SOFTWARE
 export NEMOCLAW_ENDPOINT_URL COMPATIBLE_API_KEY
 export NEMOCLAW_REPO_DIR OPENCLAW_CONFIG_UPDATE_SCRIPT NEMOCLAW_POLICY_FILE
+export NEMOCLAW_DASHBOARD_PORT NEMOCLAW_DASHBOARD_BIND_ADDRESS
 export HERMES_WORKSPACE_DIR HERMES_REMOTE_CONTEXT_DIR HERMES_REMOTE_HOME HERMES_API_PORT
 export HERMES_MCP_SERVER_NAME HERMES_MCP_URL HERMES_BAKE_MCP HERMES_FROM_DOCKERFILE HERMES_BUILD_DIR
 export NEMOCLAW_HERMES_DASHBOARD NEMOCLAW_HERMES_DASHBOARD_PORT

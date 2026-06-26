@@ -77,6 +77,15 @@ If it doesn't print `host alias reachable`, the `vss-backend` egress
 policy isn't applied to this sandbox or the orchestrator isn't running
 on the host. Stop and tell the user.
 
+## File reads
+
+Use OpenClaw's native `read` tool for workspace files such as
+`/sandbox/.openclaw/workspace/ENV.md`, `AGENTS.md`, `TOOLS.md`, and
+`BOOTSTRAP.md`. Do not use `tool_search_code` for simple file reads.
+That code runner evaluates JavaScript in a VM where dynamic imports such
+as `await import("fs")` fail with `A dynamic import callback was not
+specified`.
+
 ## Deployment
 
 Deployment is delegated to the VSS Orchestrator MCP server at
@@ -124,6 +133,12 @@ If the probe succeeds but tools still do not appear in the active chat, run
 `openclaw mcp reload` or restart/reconnect the OpenClaw session. If the probe
 fails, tell the user to make sure the host VSS Orchestrator MCP server is
 running from the notebook before trying deployment.
+
+OpenClaw's internal tool catalog may show MCP tool IDs with a doubled prefix,
+such as `mcp:bundle-mcp:vss_orchestrator__vss_orchestrator__prereqs`, while
+the user-facing label is `vss_orchestrator__prereqs`. That is normal. If you
+need to call through the tool registry, search for the label and call the
+returned `id`; do not invent or shorten the internal ID.
 
 Ignore `react_agent` if it appears in discovery output — it is the
 orchestrator workflow entry function, not a deployment tool.

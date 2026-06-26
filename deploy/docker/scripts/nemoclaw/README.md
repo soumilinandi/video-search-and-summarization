@@ -164,6 +164,10 @@ The script also honors these environment variables:
 - `NVIDIA_API_KEY`
 - `OPENCLAW_CONFIG_UPDATE_SCRIPT`
 - `OPENCLAW_PLUGIN_VARIANT`: plugin workspace overlay, default `nemoclaw`
+- `NEMOCLAW_DASHBOARD_PORT`: OpenClaw dashboard forward port, default `18789`
+- `NEMOCLAW_DASHBOARD_BIND_ADDRESS`: OpenClaw dashboard forward bind address, default `0.0.0.0`
+- `NEMOCLAW_DASHBOARD_DOMAIN`: Brev/Launchpad app domain for generated UI links, default `stg.apps.launchpad.nvidia.com`
+- `NEMOCLAW_DASHBOARD_ORIGIN`: explicit OpenClaw UI origin override, for example `https://18789-<env-id>.stg.apps.launchpad.nvidia.com`
 - `NEMOCLAW_POLICY_FILE`
 - `VSS_CONTAINER_NAME`: explicit OpenShell gateway container name, if autodetection is not sufficient
 - `VSS_NAMESPACE`: Kubernetes namespace for the sandbox pod, default `openshell`
@@ -183,14 +187,14 @@ Successful runs usually include log lines like:
 [init_nemoclaw] Applying custom policy file /home/ubuntu/video-search-and-summarization/assets/vss_nemoclaw_policy.yaml to sandbox demo
 [init_nemoclaw] VSS skills installed
 [init_nemoclaw] Updating OpenClaw config for sandbox demo using script /home/ubuntu/video-search-and-summarization/deploy/docker/scripts/nemoclaw/update_openclaw_config.py
-OpenClaw UI at https://18789-<brev-id>.brevlab.com/#token=<token>
+OpenClaw UI at https://18789-<brev-id>.stg.apps.launchpad.nvidia.com/#token=<token>
 ```
 
 If the config update succeeds, the helper also prints:
 
 - `Updated /sandbox/.openclaw/openclaw.json` or `No JSON change needed ...`
 - `Brev instance ID: ...`
-- `Origin allowed in OpenClaw: https://18789-<brev-id>.brevlab.com`
+- `Origin allowed in OpenClaw: https://18789-<brev-id>.stg.apps.launchpad.nvidia.com`
 - `MCP server registered: vss_orchestrator -> http://host.openshell.internal:9988/mcp`
 - `Dashboard token: ...`
 
@@ -206,6 +210,10 @@ If the config update succeeds, the helper also prints:
 - If the skills upload is skipped, verify the repo checkout includes `skills/`.
 - If the skills upload cannot determine a gateway container, set `VSS_CONTAINER_NAME` explicitly.
 - If the OpenClaw origin update fails, run `python3 deploy/docker/scripts/nemoclaw/update_openclaw_config.py demo` directly to inspect the underlying error.
+- If the Brev/Launchpad OpenClaw UI shows a Pomerium `UPSTREAM HOST` error,
+  verify `openshell forward list` shows `0.0.0.0 18789`, not
+  `127.0.0.1 18789`. Re-run the init script, or start the forward manually:
+  `openshell forward start 0.0.0.0:18789 demo`.
 - For Hermes, if MCP tools are not listed after connecting, confirm the host MCP
   server is running, reconnect Hermes, and verify `/opt/hermes/.venv` can import
   Python `mcp`. Existing sandboxes created before the MCP layer may need to be

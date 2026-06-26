@@ -77,6 +77,14 @@ def get_brev_env_id() -> str:
     ]
     for hostname in hostname_candidates:
         host = hostname.strip().lower().rstrip(".")
+        launchpad_match = re.match(
+            r"^\d+-([a-z0-9-]+)\.(?:stg\.)?apps\.launchpad\.nvidia\.com$",
+            host,
+        )
+        if launchpad_match:
+            return launchpad_match.group(1)
+        if host.startswith("brev-"):
+            return host[len("brev-") :]
         if not host.endswith(".brevlab.com"):
             continue
         host = host[: -len(".brevlab.com")]
@@ -84,6 +92,23 @@ def get_brev_env_id() -> str:
             return host.split("-", 1)[1]
 
     return ""
+
+
+def get_dashboard_origin(env_id: str) -> str:
+    explicit_origin = os.environ.get("NEMOCLAW_DASHBOARD_ORIGIN", "").strip().rstrip("/")
+    if explicit_origin:
+        return explicit_origin
+
+    port = os.environ.get("NEMOCLAW_DASHBOARD_PORT", "18789").strip() or "18789"
+    if env_id:
+        domain = (
+            os.environ.get("NEMOCLAW_DASHBOARD_DOMAIN", "stg.apps.launchpad.nvidia.com")
+            .strip()
+            .strip(".")
+        )
+        return f"https://{port}-{env_id}.{domain}"
+
+    return f"http://127.0.0.1:{port}"
 
 
 def read_remote_file(
@@ -291,11 +316,7 @@ def main() -> int:
     args = parser.parse_args()
 
     env_id = get_brev_env_id()
-    if env_id:
-        origin = f"https://18789-{env_id}.brevlab.com"
-    else:
-        port = os.environ.get("NEMOCLAW_DASHBOARD_PORT", "18789").strip()
-        origin = f"http://127.0.0.1:{port}"
+    origin = get_dashboard_origin(env_id)
 
     raw = read_remote_file(args.sandbox_name, args.config_path)
 
